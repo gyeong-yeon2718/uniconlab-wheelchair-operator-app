@@ -59,8 +59,6 @@ public class MainActivity extends AppCompatActivity {
     private TextView bluetoothBadgeText;
     private TextView speedMpsText;
     private TextView speedText;
-    private TextView batteryText;
-    private TextView batteryStatusText;
     private TextView modeText;
     private TextView stepLevelText;
     private TextView systemStateText;
@@ -109,6 +107,15 @@ public class MainActivity extends AppCompatActivity {
      * socket read simply never returns. Without this the dashboard kept saying
      * 연결됨 over frozen numbers, which is worse than saying nothing.
      */
+    /**
+     * The route frame is sent once per connection, ahead of any telemetry, and
+     * the device picker owns the shared Bluetooth callback until this activity
+     * swaps itself in -- so the one copy that mattered was routinely dropped and
+     * the map stayed blank for the session. Ask for it until we have one.
+     */
+    private static final long ROUTE_REQUEST_INTERVAL_MS = 4_000L;
+    private long lastRouteRequestAt;
+
     private static final long TELEMETRY_STALE_MS = 3_000L;
     private static final long WATCHDOG_TICK_MS = 1_000L;
     private long lastFrameAt;
@@ -263,6 +270,7 @@ public class MainActivity extends AppCompatActivity {
                         sawProtocolFrame = true;
                         foreignLineCount = 0;
                         noteFrameArrived();
+                        requestRouteIfMissing();
                         renderBridgeTelemetry(frame);
                         rawJsonText.setText(line);
                     } catch (Exception e) {
@@ -289,10 +297,6 @@ public class MainActivity extends AppCompatActivity {
                 double speedMps = update.getSpeedKph() / 3.6;
                 speedMpsText.setText(speedFormat.format(speedMps));
                 speedText.setText(speedFormat.format(update.getSpeedKph()) + " km/h");
-            }
-            if (update.getBatteryPercent() != null) {
-                batteryText.setText(String.valueOf(update.getBatteryPercent()));
-                batteryStatusText.setText(batteryStatusText(update.getBatteryPercent()));
             }
             if (update.getMode() != null) {
                 updateDisplayedMode(update.getMode());
@@ -331,8 +335,6 @@ public class MainActivity extends AppCompatActivity {
         }
         speedMpsText = findViewById(R.id.speedMpsText);
         speedText = findViewById(R.id.speedText);
-        batteryText = findViewById(R.id.batteryText);
-        batteryStatusText = findViewById(R.id.batteryStatusText);
         modeText = findViewById(R.id.modeText);
         systemStateText = findViewById(R.id.systemStateText);
         rawJsonText = findViewById(R.id.rawJsonText);
@@ -362,6 +364,10 @@ public class MainActivity extends AppCompatActivity {
         stackStartButton = findViewById(R.id.stackStartButton);
         jobCancelButton = findViewById(R.id.jobCancelButton);
         routeMapView = findViewById(R.id.routeMapView);
+        // Matches the speed readout's height plus its margin, so the fitted
+        // route never runs underneath it.
+        routeMapView.setBottomInset(
+                getResources().getDisplayMetrics().density * 44f);
         navStatusText = findViewById(R.id.navStatusText);
     }
 
@@ -446,6 +452,19 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
+    /** Same wire format, but no status-line noise: this one is housekeeping. */
+    private void sendBridgeCommandQuietly(String command) {
+        if (bluetoothClient == null || !bluetoothClient.isConnected()) {
+            return;
+        }
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("command", command);
+            bluetoothClient.sendJsonCommand(payload);
+        } catch (JSONException ignored) {
+        }
+    }
+
     private void sendBridgeCommand(String command, boolean confirm, String pendingMessage) {
         JSONObject payload = new JSONObject();
         try {
@@ -472,23 +491,6 @@ public class MainActivity extends AppCompatActivity {
             speedMpsText.setText(R.string.empty_value);
             speedText.setText(R.string.empty_speed_kph);
         }
-        // No node on this stack measures charge. /wheel_status data[7] was
-        // being shown as a percentage, but it only ever reads 88 or 77 and
-        // toggles with motion -- it is a status byte, not a fuel gauge, and a
-        // rider reading it as remaining range would be badly misled.
-        if (!f.isNull("battery_percent")) {
-            int percent = f.optInt("battery_percent");
-            batteryText.setText(String.valueOf(percent));
-            batteryStatusText.setText(batteryStatusText(percent));
-        } else if (!f.isNull("wheel_status_byte7")) {
-            batteryText.setText(R.string.empty_value);
-            batteryStatusText.setText(String.format(Locale.US,
-                    "측정 안 됨 · data[7]=%d (용도 미확인)", f.optInt("wheel_status_byte7")));
-        } else {
-            batteryText.setText(R.string.empty_value);
-            batteryStatusText.setText("데이터 없음");
-        }
-
         boolean estop = f.optBoolean("estop_engaged", false);
         boolean pending = f.optBoolean("estop_pending", false);
         // Manual after bring-up is the normal resting state, not an emergency.
@@ -636,6 +638,19 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /** Cheap to ask, and it stops as soon as a route is on screen. */
+    private void requestRouteIfMissing() {
+        if (routeMapView == null || routeMapView.hasRoute()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastRouteRequestAt < ROUTE_REQUEST_INTERVAL_MS) {
+            return;
+        }
+        lastRouteRequestAt = now;
+        sendBridgeCommandQuietly("route");
+    }
+
     private void noteFrameArrived() {
         lastFrameAt = System.currentTimeMillis();
         linkStale = false;
@@ -654,8 +669,6 @@ public class MainActivity extends AppCompatActivity {
         connectionStateText.setText("텔레메트리 수신 끊김 — 재연결 시도 중");
         speedMpsText.setText(R.string.empty_value);
         speedText.setText(R.string.empty_speed_kph);
-        batteryText.setText(R.string.empty_value);
-        batteryStatusText.setText("데이터 없음");
         readinessText.setText("링크 끊김 — 표시된 값은 마지막 수신 값입니다");
         readinessText.setBackgroundColor(
                 ContextCompat.getColor(this, R.color.status_reconnecting_bg));
@@ -743,8 +756,14 @@ public class MainActivity extends AppCompatActivity {
             line.append("\n사유 ").append(f.optString("loc_reason"));
         }
         if (!f.isNull("wp_index") && !f.isNull("wp_total")) {
-            line.append(String.format(Locale.US, "\n경로 %d/%d",
-                    f.optInt("wp_index"), f.optInt("wp_total")));
+            int done = f.optInt("wp_index");
+            int total = f.optInt("wp_total");
+            // Percent is what an operator can judge at a glance; 921/1917 needs
+            // mental arithmetic before it means anything.
+            line.append(total > 0
+                    ? String.format(Locale.US, "%n경로 진행 %.0f%%  (%d/%d)",
+                            100.0 * done / total, done, total)
+                    : String.format(Locale.US, "%n경로 %d/%d", done, total));
             if (!f.isNull("follower_state")) {
                 line.append("  ·  ").append(f.optString("follower_state"));
             }
@@ -1320,8 +1339,6 @@ public class MainActivity extends AppCompatActivity {
 
         speedMpsText.setText(speedKph == null ? "--" : speedFormat.format(speedKph));
         speedText.setText(speedKph == null ? getString(R.string.empty_speed_mps) : speedFormat.format(speedKph / 3.6) + " m/s");
-        batteryText.setText(batteryPercent == null ? "--" : String.valueOf(batteryPercent));
-        batteryStatusText.setText(batteryStatusText(batteryPercent));
         updateDisplayedMode(mode);
         systemStateText.setText(hasTelemetry ? R.string.system_state_running : R.string.system_state_waiting);
         rawJsonText.setText(telemetryStatusText(speedKph, batteryPercent, displayModeForTelemetry(mode), telemetry));

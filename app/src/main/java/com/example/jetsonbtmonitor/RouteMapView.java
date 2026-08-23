@@ -27,6 +27,14 @@ public class RouteMapView extends View {
 
     private static final float PAD_PX = 24f;
 
+    /**
+     * Height kept clear along the bottom edge for the speed readout that sits
+     * over the map. Reserved before fitting rather than drawn over afterwards --
+     * the whole point of putting the speed here was to save space, and a readout
+     * that hides the corner the chair is currently in saves nothing.
+     */
+    private float bottomInsetPx;
+
     private float[] routeX = new float[0];
     private float[] routeY = new float[0];
     private int progressIndex = -1;
@@ -110,6 +118,16 @@ public class RouteMapView extends View {
         invalidate();
     }
 
+    /** Whether a drawable route has actually arrived. */
+    public boolean hasRoute() {
+        return routeX.length >= 2;
+    }
+
+    public void setBottomInset(float px) {
+        bottomInsetPx = Math.max(0f, px);
+        invalidate();
+    }
+
     public int getStride() {
         return stride;
     }
@@ -146,7 +164,7 @@ public class RouteMapView extends View {
         float spanX = Math.max(maxX - minX, 0.5f);
         float spanY = Math.max(maxY - minY, 0.5f);
         float usableW = getWidth() - 2 * PAD_PX;
-        float usableH = getHeight() - 2 * PAD_PX;
+        float usableH = getHeight() - 2 * PAD_PX - bottomInsetPx;
         // One scale for both axes: an independently stretched map would misreport
         // how close the chair is to the route.
         float scale = Math.min(usableW / spanX, usableH / spanY);
