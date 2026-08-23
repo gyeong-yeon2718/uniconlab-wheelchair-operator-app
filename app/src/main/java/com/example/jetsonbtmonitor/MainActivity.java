@@ -83,8 +83,50 @@ public class MainActivity extends AppCompatActivity {
     private MaterialButton stepUpButton;
     private MaterialButton stepDownButton;
     private MaterialButton stopButton;
+    private MaterialButton estopReleaseButton;
+    private MaterialButton driveStartButton;
+    private MaterialButton driveStopButton;
+    private TextView readinessText;
+    private TextView subsystemText;
+    private TextView followerStatusText;
+    private TextView jobStatusText;
+    private MaterialButton stackStartButton;
+    private MaterialButton jobCancelButton;
+    private RouteMapView routeMapView;
+    private TextView navStatusText;
+    private TextView estopHintText;
+    private boolean sawProtocolFrame;
+    private int foreignLineCount;
 
     private int stepLevel = 3;
+    /** Latched from telemetry so the arm/release button knows which it is. */
+    private boolean estopEngaged;
+
+    /**
+     * Link watchdog. The bridge sends at 2 Hz, so six missed frames is a dead
+     * link -- and a dead link does not announce itself: when the bridge process
+     * dies or the phone walks out of range, the ACL connection stays up and the
+     * socket read simply never returns. Without this the dashboard kept saying
+     * 연결됨 over frozen numbers, which is worse than saying nothing.
+     */
+    private static final long TELEMETRY_STALE_MS = 3_000L;
+    private static final long WATCHDOG_TICK_MS = 1_000L;
+    private long lastFrameAt;
+    private boolean linkStale;
+
+    private final Runnable linkWatchdog = new Runnable() {
+        @Override
+        public void run() {
+            if (destroyed) {
+                return;
+            }
+            if (AppConfig.BLUETOOTH_ONLY && lastFrameAt > 0 && !linkStale
+                    && System.currentTimeMillis() - lastFrameAt > TELEMETRY_STALE_MS) {
+                onTelemetryStale();
+            }
+            mainHandler.postDelayed(this, WATCHDOG_TICK_MS);
+        }
+    };
     private JSONObject presetsById = new JSONObject();
     private String defaultPresetId = "";
     private String activePresetId = "";
@@ -106,7 +148,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if (!UserSession.isLoggedIn(this)) {
+        // The login gate belongs to the upstream Wi-Fi build, where the Jetson
+        // bridge kept a user store. The NUC has none, so requiring a login here
+        // just bounced the user straight back to the connect screen after a
+        // successful Bluetooth connection.
+        if (!AppConfig.BLUETOOTH_ONLY && !UserSession.isLoggedIn(this)) {
             startActivity(new Intent(this, WifiSetupActivity.class));
             finish();
             return;
@@ -122,18 +168,146 @@ public class MainActivity extends AppCompatActivity {
         loadLocalPresets();
         renderPresetCards();
         resetScrollPosition();
-        checkApiConnection();
-        loadPresets();
-        startTelemetryPolling();
+        setupBluetoothClient();
+        mainHandler.postDelayed(linkWatchdog, WATCHDOG_TICK_MS);
         requestNotificationPermissionIfNeeded();
-        WheelchairBackgroundService.start(this);
-        apiClient.logUsage(UserSession.userId(this), "app_open", emptyCallback());
+
+        // Bluetooth is the only transport to the NUC. The Wi-Fi HTTP paths below
+        // point at an address that does not exist in this deployment, so leaving
+        // them running meant a failed request every 5 s from a foreground service
+        // plus a poller that could overwrite live Bluetooth telemetry with errors.
+        // Keep them behind the flag so the Jetson/Wi-Fi build still works.
+        if (!AppConfig.BLUETOOTH_ONLY) {
+            loadPresets();
+            startTelemetryPolling();
+            WheelchairBackgroundService.start(this);
+        }
+    }
+
+    private BluetoothWheelchairClient bluetoothClient;
+
+    private void setupBluetoothClient() {
+        bluetoothClient = BluetoothWheelchairClient.getSharedInstance(new BluetoothWheelchairClient.Callback() {
+            @Override
+            public void onConnected(android.bluetooth.BluetoothDevice device) {
+                runOnUiThread(() -> {
+                    setConnectedUi(true);
+                    String devName = "NUC Bluetooth";
+                    try {
+                        if (device != null && device.getName() != null) devName = device.getName();
+                    } catch (SecurityException ignored) {}
+                    connectionStateText.setText("BT 연결됨 (" + devName + ")");
+                    // Arm the watchdog from the connect, not from the first
+                    // frame: a socket that opens and then delivers nothing is
+                    // exactly the case that needs catching (wrong service, or a
+                    // bridge that died between SDP and the first broadcast).
+                    lastFrameAt = System.currentTimeMillis();
+                    linkStale = false;
+                });
+            }
+
+            @Override
+            public void onDisconnected() {
+                runOnUiThread(() -> {
+                    setConnectedUi(false);
+                    connectionStateText.setText("BT 연결 끊김");
+                    // Nothing on screen is current any more, and a dashboard that
+                    // keeps offering E-STOP over a dead link is worse than one
+                    // that admits it cannot reach the chair.
+                    disableRobotControls();
+                });
+            }
+
+            @Override
+            public void onReconnecting(int attempt, long delayMs) {
+                runOnUiThread(() -> {
+                    setConnectionState(getString(R.string.connection_reconnecting),
+                            R.drawable.status_dot_connecting,
+                            R.color.status_connecting_text);
+                    connectionStateText.setText(String.format(Locale.US,
+                            "재연결 시도 %d회 — %.0f초 후", attempt, delayMs / 1000.0));
+                });
+            }
+
+            @Override
+            public void onLineReceived(String line) {
+                runOnUiThread(() -> {
+                    setConnectedUi(true);
+                    try {
+                        JSONObject frame = new JSONObject(line);
+                        String type = frame.optString("type");
+                        if ("route".equals(type)) {
+                            routeMapView.setRoute(frame.optJSONArray("points"),
+                                    frame.optInt("stride", 1),
+                                    frame.optInt("count_full", frame.optInt("count")));
+                            int full = frame.optInt("count_full", frame.optInt("count"));
+                            int sent = frame.optInt("count");
+                            showStatus(full == sent
+                                    ? ("경로 수신: " + full + "개 지점")
+                                    : ("경로 수신: " + full + "개 중 " + sent + "개 표시 ("
+                                       + frame.optString("source") + ")"));
+                            return;
+                        }
+                        if ("ack".equals(type)) {
+                            noteFrameArrived();
+                            // The bridge's detail text is written to be shown as-is.
+                            String detail = frame.optString("detail");
+                            showStatus((frame.optBoolean("ok") ? "✓ " : "거부: ") + detail);
+                            rawJsonText.setText(detail);
+                            return;
+                        }
+                        if (!frame.has("protocol_version")) {
+                            noteForeignData(line);
+                            return;
+                        }
+                        sawProtocolFrame = true;
+                        foreignLineCount = 0;
+                        noteFrameArrived();
+                        renderBridgeTelemetry(frame);
+                        rawJsonText.setText(line);
+                    } catch (Exception e) {
+                        noteForeignData(line);
+                    }
+                });
+            }
+
+            @Override
+            public void onError(String message, Throwable throwable) {
+                runOnUiThread(() -> showStatus("BT: " + message));
+            }
+        });
+
+        if (bluetoothClient.isConnected()) {
+            setConnectedUi(true);
+            connectionStateText.setText("BT 연결됨");
+        }
+    }
+
+    private void renderTelemetryFromBt(WheelchairTelemetryUpdate update, String rawLine) {
+        if (update != null) {
+            if (update.getSpeedKph() != null) {
+                double speedMps = update.getSpeedKph() / 3.6;
+                speedMpsText.setText(speedFormat.format(speedMps));
+                speedText.setText(speedFormat.format(update.getSpeedKph()) + " km/h");
+            }
+            if (update.getBatteryPercent() != null) {
+                batteryText.setText(String.valueOf(update.getBatteryPercent()));
+                batteryStatusText.setText(batteryStatusText(update.getBatteryPercent()));
+            }
+            if (update.getMode() != null) {
+                updateDisplayedMode(update.getMode());
+                syncModeSelection(displayModeForTelemetry(update.getMode()));
+            }
+            systemStateText.setText(R.string.system_state_running);
+            rawJsonText.setText("NUC Bluetooth 수신:\n" + rawLine);
+        }
     }
 
     @Override
     protected void onDestroy() {
         destroyed = true;
         mainHandler.removeCallbacks(telemetryPollRunnable);
+        mainHandler.removeCallbacks(linkWatchdog);
         if (apiClient != null) {
             apiClient.shutdown();
         }
@@ -152,15 +326,16 @@ public class MainActivity extends AppCompatActivity {
         connectButton = findViewById(R.id.connectButton);
         connectionStateText = findViewById(R.id.connectionStateText);
         bluetoothBadgeText = findViewById(R.id.bluetoothBadgeText);
+        if (AppConfig.BLUETOOTH_ONLY) {
+            bluetoothBadgeText.setText("BT");
+        }
         speedMpsText = findViewById(R.id.speedMpsText);
         speedText = findViewById(R.id.speedText);
         batteryText = findViewById(R.id.batteryText);
         batteryStatusText = findViewById(R.id.batteryStatusText);
         modeText = findViewById(R.id.modeText);
-        stepLevelText = findViewById(R.id.stepLevelText);
         systemStateText = findViewById(R.id.systemStateText);
         rawJsonText = findViewById(R.id.rawJsonText);
-        modeToggleGroup = findViewById(R.id.modeToggleGroup);
         presetBaseCard = findViewById(R.id.presetBaseCard);
         presetFastCard = findViewById(R.id.presetFastCard);
         presetSlowCard = findViewById(R.id.presetSlowCard);
@@ -175,37 +350,460 @@ public class MainActivity extends AppCompatActivity {
         presetSlowSettingsButton = findViewById(R.id.presetSlowSettingsButton);
         openCameraButton = findViewById(R.id.openCameraButton);
         settingsButton = findViewById(R.id.settingsButton);
-        stepUpButton = findViewById(R.id.stepUpButton);
-        stepDownButton = findViewById(R.id.stepDownButton);
         stopButton = findViewById(R.id.stopButton);
+        estopReleaseButton = findViewById(R.id.estopReleaseButton);
+        estopHintText = findViewById(R.id.estopHintText);
+        driveStartButton = findViewById(R.id.driveStartButton);
+        driveStopButton = findViewById(R.id.driveStopButton);
+        readinessText = findViewById(R.id.readinessText);
+        subsystemText = findViewById(R.id.subsystemText);
+        followerStatusText = findViewById(R.id.followerStatusText);
+        jobStatusText = findViewById(R.id.jobStatusText);
+        stackStartButton = findViewById(R.id.stackStartButton);
+        jobCancelButton = findViewById(R.id.jobCancelButton);
+        routeMapView = findViewById(R.id.routeMapView);
+        navStatusText = findViewById(R.id.navStatusText);
     }
 
     private void setupActions() {
-        refreshButton.setOnClickListener(view -> pollTelemetry());
-        connectButton.setOnClickListener(view -> checkApiConnection());
+        // These two used to call the Jetson HTTP API, which does not exist in this
+        // deployment -- pressing them reported "Jetson Wi-Fi API 에 접근할 수 없습니다"
+        // on a link that was working perfectly. On Bluetooth they ping the bridge
+        // instead, which is what the operator is actually asking about.
+        if (AppConfig.BLUETOOTH_ONLY) {
+            connectButton.setOnClickListener(view -> pingBridge());
+            refreshButton.setOnClickListener(view -> pingBridge());
+        } else {
+            refreshButton.setOnClickListener(view -> pollTelemetry());
+            connectButton.setOnClickListener(view -> checkApiConnection());
+        }
         settingsButton.setOnClickListener(view -> startActivity(new Intent(this, SettingsActivity.class)));
-        openCameraButton.setOnClickListener(view -> openCameraStream());
-        presetBaseCard.setOnClickListener(view -> applyPreset(PRESET_BASE, false));
-        presetFastCard.setOnClickListener(view -> applyPreset(PRESET_FAST, false));
-        presetSlowCard.setOnClickListener(view -> applyPreset(PRESET_SLOW, false));
-        presetBaseSettingsButton.setOnClickListener(view -> showPresetDialog(PRESET_BASE));
-        presetFastSettingsButton.setOnClickListener(view -> showPresetDialog(PRESET_FAST));
-        presetSlowSettingsButton.setOnClickListener(view -> showPresetDialog(PRESET_SLOW));
-        stepUpButton.setOnClickListener(view -> setStepLevel(stepLevel + 1));
-        stepDownButton.setOnClickListener(view -> setStepLevel(stepLevel - 1));
-        stopButton.setOnClickListener(view -> sendStopCommand());
-        modeToggleGroup.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
-            if (updatingModeSelection || !isChecked) {
-                return;
+        if (AppConfig.CAMERA_ENABLED) {
+            openCameraButton.setOnClickListener(view -> openCameraStream());
+        } else {
+            // The NUC runs no MJPEG server. Hide the whole card, not just the
+            // button: an empty "Camera Stream" panel still implies there is one.
+            View cameraCard = findViewById(R.id.cameraCard);
+            if (cameraCard != null) {
+                cameraCard.setVisibility(View.GONE);
             }
-            if (checkedId == R.id.manualModeButton) {
-                sendModeCommand("manual");
-            } else if (checkedId == R.id.assistModeButton) {
-                sendModeCommand("assist");
-            } else if (checkedId == R.id.autonomousModeButton) {
-                sendModeCommand("autonomous");
+            openCameraButton.setVisibility(View.GONE);
+        }
+        // Presets encode mode+step, neither of which exists in this stack.
+        hidePresetSection();
+
+        // E-STOP is one press on purpose: a confirm dialog in front of an
+        // emergency control is a hazard, not a safeguard.
+        stopButton.setOnClickListener(view -> sendBridgeCommand("estop", false,
+                "E-STOP을 보냈습니다."));
+        // One command (estop_release -> mode_cmd=65) covering two situations:
+        // undoing an E-STOP, and arming a base that is simply resting in manual
+        // after bring-up. The rider has to judge a different thing in each case,
+        // so the dialog asks the question that belongs to the state it is in.
+        estopReleaseButton.setOnClickListener(view -> confirmThen(
+                estopEngaged ? "E-STOP 해제" : "자동 모드 전환",
+                estopEngaged
+                        ? "휠체어 주변이 안전한지 확인하셨습니까?\n\n해제해도 주행은 재개되지 않습니다."
+                        : "베이스를 자동 모드로 전환합니다.\n\n조종간 조작이 무시되며, "
+                          + "전환만으로는 움직이지 않습니다. 주행은 [주행 시작]을 따로 눌러야 합니다.",
+                () -> sendBridgeCommand("estop_release", true,
+                        estopEngaged ? "E-STOP 해제를 요청했습니다." : "자동 모드 전환을 요청했습니다.")));
+        driveStartButton.setOnClickListener(view -> confirmThen(
+                "주행 시작",
+                "휠체어가 즉시 움직이기 시작합니다. 계속할까요?",
+                () -> sendBridgeCommand("drive_start", true, "주행 시작을 요청했습니다.")));
+        driveStopButton.setOnClickListener(view -> sendBridgeCommand("drive_stop", false,
+                "주행 정지를 요청했습니다."));
+        stackStartButton.setOnClickListener(view -> confirmThen(
+                "로컬 켜기",
+                "라이다·IMU·측위 노드를 기동합니다.\n\n수 분 걸리며, 휠체어는 움직이지 않습니다.",
+                () -> sendBridgeCommand("stack_start", true, "시스템 기동을 시작했습니다.")));
+        jobCancelButton.setOnClickListener(view -> confirmThen(
+                "기동 중단",
+                "실행 중인 기동 스크립트를 중단합니다. 계속할까요?",
+                () -> sendBridgeCommand("job_cancel", false, "중단 신호를 보냈습니다.")));
+    }
+
+
+    // ---------------------------------------------------------- bridge control
+
+    /** Presets carry mode+step, neither of which exists in the live stack. */
+    private void hidePresetSection() {
+        View heading = findViewById(R.id.presetSectionTitle);
+        for (View v : new View[]{heading, presetBaseCard, presetFastCard, presetSlowCard}) {
+            if (v != null) {
+                v.setVisibility(View.GONE);
             }
-        });
+        }
+    }
+
+    private void confirmThen(String title, String message, Runnable action) {
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(message)
+                .setNegativeButton("취소", null)
+                .setPositiveButton("확인", (d, w) -> action.run())
+                .show();
+    }
+
+    private void sendBridgeCommand(String command, boolean confirm, String pendingMessage) {
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("command", command);
+            if (confirm) {
+                payload.put("confirm", true);
+            }
+        } catch (JSONException exception) {
+            showStatus("명령 생성에 실패했습니다.");
+            return;
+        }
+        sendCommand(payload, pendingMessage);
+    }
+
+    /** Renders a protocol-v3 telemetry frame. The bridge is the source of truth. */
+    private void renderBridgeTelemetry(JSONObject f) {
+        if (!f.isNull("speed_mps")) {
+            double mps = f.optDouble("speed_mps");
+            speedMpsText.setText(speedFormat.format(mps));
+            speedText.setText(speedFormat.format(mps * 3.6) + " km/h");
+        } else {
+            // No fresh odometry. Leaving the last number on screen would show a
+            // speed the chair had some unknown time ago as if it were current.
+            speedMpsText.setText(R.string.empty_value);
+            speedText.setText(R.string.empty_speed_kph);
+        }
+        if (!f.isNull("battery_percent")) {
+            int percent = f.optInt("battery_percent");
+            batteryText.setText(String.valueOf(percent));
+            batteryStatusText.setText(batteryStatusText(percent));
+        } else {
+            batteryText.setText(R.string.empty_value);
+            batteryStatusText.setText("데이터 없음");
+        }
+
+        boolean estop = f.optBoolean("estop_engaged", false);
+        boolean pending = f.optBoolean("estop_pending", false);
+        // Manual after bring-up is the normal resting state, not an emergency.
+        boolean manualIdle = f.optBoolean("manual_idle", false);
+        estopEngaged = estop;
+        String mode = f.isNull("drive_mode") ? null : f.optString("drive_mode");
+        modeText.setText(estop ? "정지 (수동)"
+                : "auto".equals(mode) ? "자율 (auto)"
+                : "manual".equals(mode) ? "수동 (manual)"
+                : getString(R.string.empty_value));
+
+        systemStateText.setText(estop ? "E-STOP 작동 중"
+                : pending ? "E-STOP 반영 대기…"
+                : manualIdle ? "수동 모드 (대기)" : "정상");
+        systemStateText.setTextColor(ContextCompat.getColor(this,
+                estop ? R.color.danger_red : R.color.text_primary));
+
+        boolean ready = f.optBoolean("ready_to_drive", false);
+        boolean blocked = f.optBoolean("motion_blocked", false);
+        String readiness;
+        int bg, fg;
+        if (estop) {
+            readiness = "E-STOP — 해제해야 주행할 수 있습니다";
+            bg = R.color.status_reconnecting_bg;
+            fg = R.color.status_disconnected_text;
+        } else if (manualIdle) {
+            // [주행 시작] does NOT arm the base -- the bridge refuses while the
+            // drive mode reads manual. Point at the button that actually arms it.
+            readiness = "수동 모드 — [자동 모드 전환]으로 시동을 건 뒤 주행할 수 있습니다";
+            bg = R.color.status_waiting_bg;
+            fg = R.color.status_waiting_text;
+        } else if (blocked) {
+            readiness = "안전 게이트가 주행을 보류 중입니다";
+            bg = R.color.status_connecting_bg;
+            fg = R.color.status_connecting_text;
+        } else if (ready) {
+            readiness = "주행 준비 완료";
+            bg = R.color.status_connected_bg;
+            fg = R.color.status_connected_text;
+        } else {
+            readiness = "주행 조건 미충족";
+            bg = R.color.status_waiting_bg;
+            fg = R.color.status_waiting_text;
+        }
+        readinessText.setText(readiness);
+        readinessText.setBackgroundColor(ContextCompat.getColor(this, bg));
+        readinessText.setTextColor(ContextCompat.getColor(this, fg));
+
+        subsystemText.setText(String.format(Locale.US,
+                "휠 링크 %s   ·   측위 %s   ·   경사 %s\n장애물 %s\n결함 %s",
+                f.optBoolean("wheel_link_ok", false) ? "정상" : "끊김",
+                subsystemValue(f, "localization_status"),
+                subsystemValue(f, "tip_guard_status"),
+                subsystemValue(f, "objects_summary"),
+                subsystemValue(f, "robot_fault")));
+        // A missing reading is a different fact from a clean one, and the line
+        // greys as a whole so the difference is visible without reading it.
+        subsystemText.setTextColor(ContextCompat.getColor(this,
+                hasUnavailableSubsystem(f) ? R.color.text_tertiary : R.color.text_secondary));
+
+        String followerStatus = f.isNull("follower_status")
+                ? getString(R.string.empty_value) : f.optString("follower_status");
+        // The follower appends POLICIES_OFF when the discretionary guards are
+        // suppressed (trial bring-up). That must not be a detail buried in a
+        // status string -- it changes what the chair will drive through.
+        boolean policiesOff = followerStatus.contains("POLICIES_OFF");
+        if (policiesOff) {
+            followerStatus = "⚠ 안전 정책 꺼짐 (POLICIES_OFF)\n" + followerStatus;
+        }
+        followerStatusText.setText(followerStatus);
+        followerStatusText.setTextColor(ContextCompat.getColor(this,
+                policiesOff ? R.color.danger_red : R.color.text_primary));
+
+        // Grey out what the robot cannot honour rather than letting a press fail.
+        boolean canDrive = f.optBoolean("follower_start_available", false);
+        // The bridge refuses drive_start on any manual reading, not just an
+        // E-STOP, so an enabled button there is a press that cannot succeed.
+        driveStartButton.setEnabled(canDrive && !estop && !manualIdle);
+        driveStopButton.setEnabled(canDrive);
+        // Arming and releasing are the same lever. Offering it only after an
+        // E-STOP left a freshly brought-up chair with no way to arm at all:
+        // [주행 시작] refused and pointed at a button that was greyed out.
+        estopReleaseButton.setEnabled(estop || manualIdle);
+        estopReleaseButton.setText(estop ? R.string.estop_release : R.string.mode_arm);
+        // The hint under the button explained the release even when the button
+        // was offering to arm, which is the opposite half of the story.
+        estopHintText.setText(estop ? R.string.estop_hint : R.string.mode_arm_hint);
+
+        renderNavSection(f);
+        renderJobSection(f);
+    }
+
+    /**
+     * Something is talking to us, but it is not the bridge.
+     *
+     * The NUC also advertises Hands-Free, and a socket opened onto that service
+     * connects perfectly happily and then sends AT commands. Reporting "연결됨"
+     * over that is the worst outcome -- the operator would trust a dashboard that
+     * is wired to nothing. Say plainly what happened instead.
+     */
+    /** Round-trips a ping so "연결 확인" tests the link that is actually in use. */
+    private void pingBridge() {
+        if (bluetoothClient == null || !bluetoothClient.isConnected()) {
+            setConnectedUi(false);
+            connectionStateText.setText("BT 연결 끊김");
+            showStatus("블루투스가 연결되어 있지 않습니다.");
+            return;
+        }
+        showStatus("브릿지 응답 확인 중…");
+        sendBridgeCommand("ping", false, "ping");
+    }
+
+    private void noteForeignData(String line) {
+        foreignLineCount++;
+        rawJsonText.setText("BT RX (알 수 없는 형식): " + line);
+        if (sawProtocolFrame) {
+            return;
+        }
+        // One line is already proof. Waiting for a second meant Hands-Free --
+        // which sends a single AT+VGS on connect and then goes quiet -- sat
+        // there under a 연결됨 header indefinitely.
+        boolean atCommand = line != null && line.startsWith("AT+");
+        readinessText.setText(atCommand
+                ? "잘못된 서비스에 연결됨 — NUC의 핸즈프리(HFP)입니다"
+                : "잘못된 서비스에 연결됨 — 브릿지 응답이 아닙니다");
+        readinessText.setBackgroundColor(
+                ContextCompat.getColor(this, R.color.status_reconnecting_bg));
+        readinessText.setTextColor(
+                ContextCompat.getColor(this, R.color.status_disconnected_text));
+        subsystemText.setText("NUC에서 브릿지가 실행 중인지 확인하세요:\n"
+                + "  ./scripts/nuc_bridge_restart.sh --allow-commands --allow-scripts\n"
+                + "브릿지가 꺼져 있으면 SPP 레코드가 사라지고, 앱이 다른 서비스에 붙습니다.");
+        subsystemText.setTextColor(
+                ContextCompat.getColor(this, R.color.status_disconnected_text));
+        // Nothing here is real, so nothing here may be commanded.
+        disableRobotControls();
+        setConnectionState(getString(R.string.connection_reconnecting),
+                R.drawable.status_dot_connecting,
+                R.color.status_connecting_text);
+        connectionStateText.setText("잘못된 서비스 — 브릿지 재탐색 중");
+        // Drop it and retry. The retry path is SDP-only, so it cannot land back
+        // on Hands-Free; it will simply keep failing until the bridge is up.
+        if (bluetoothClient != null) {
+            bluetoothClient.forceReconnect();
+        }
+    }
+
+    private void noteFrameArrived() {
+        lastFrameAt = System.currentTimeMillis();
+        linkStale = false;
+    }
+
+    /**
+     * Frames stopped arriving. Say so, stop offering commands that cannot be
+     * delivered, and close the socket so the reconnect path can take over --
+     * the read is blocked and will not notice on its own.
+     */
+    private void onTelemetryStale() {
+        linkStale = true;
+        setConnectionState(getString(R.string.connection_reconnecting),
+                R.drawable.status_dot_connecting,
+                R.color.status_connecting_text);
+        connectionStateText.setText("텔레메트리 수신 끊김 — 재연결 시도 중");
+        speedMpsText.setText(R.string.empty_value);
+        speedText.setText(R.string.empty_speed_kph);
+        batteryText.setText(R.string.empty_value);
+        batteryStatusText.setText("데이터 없음");
+        readinessText.setText("링크 끊김 — 표시된 값은 마지막 수신 값입니다");
+        readinessText.setBackgroundColor(
+                ContextCompat.getColor(this, R.color.status_reconnecting_bg));
+        readinessText.setTextColor(
+                ContextCompat.getColor(this, R.color.status_disconnected_text));
+        disableRobotControls();
+        if (bluetoothClient != null) {
+            bluetoothClient.forceReconnect();
+        }
+    }
+
+    private static final String[] SUBSYSTEM_KEYS = {
+            "localization_status", "tip_guard_status", "objects_summary", "robot_fault"};
+
+    /**
+     * "없음" used to cover both "the node reported nothing wrong" and "no node is
+     * publishing this at all". For 결함 those read identically and mean opposite
+     * things: /robot_fault has no publisher unless fault_check.py is launched, so
+     * a silent fault channel was showing up as a clean bill of health.
+     */
+    private String subsystemValue(JSONObject f, String key) {
+        if (f.isNull(key)) {
+            return "데이터 없음";
+        }
+        String value = f.optString(key);
+        // fault_check.py says "none" when every bit is clear.
+        return "none".equals(value) ? "정상" : value;
+    }
+
+    private boolean hasUnavailableSubsystem(JSONObject f) {
+        for (String key : SUBSYSTEM_KEYS) {
+            if (f.isNull(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * No live link, no commands. The big red E-STOP is deliberately NOT among
+     * these: greying out an emergency control teaches the operator to doubt it,
+     * and a press that reports "not connected" is the more useful answer.
+     */
+    private void disableRobotControls() {
+        driveStartButton.setEnabled(false);
+        driveStopButton.setEnabled(false);
+        estopReleaseButton.setEnabled(false);
+        stackStartButton.setEnabled(false);
+        jobCancelButton.setEnabled(false);
+    }
+
+    /** Route map plus the localization numbers that decide whether it is trustworthy. */
+    private void renderNavSection(JSONObject f) {
+        Float px = f.isNull("pose_x") ? null : (float) f.optDouble("pose_x");
+        Float py = f.isNull("pose_y") ? null : (float) f.optDouble("pose_y");
+        Float yaw = f.isNull("pose_yaw_deg") ? null : (float) f.optDouble("pose_yaw_deg");
+        // A pose older than a second is not where the chair is now.
+        boolean stale = f.isNull("pose_age_s") || f.optDouble("pose_age_s", 99) > 1.0;
+        routeMapView.setPose(px, py, yaw, stale);
+
+        // wp_index counts the follower's route; the drawn line is whatever route
+        // the bridge resolved. When the two differ in length they are not the
+        // same file, and dividing one index into the other puts the progress
+        // marker on a line the chair is not driving. Draw the route, drop the
+        // marker, and say so -- a wrong marker is worse than no marker.
+        int countFull = routeMapView.getCountFull();
+        int wpTotal = f.isNull("wp_total") ? 0 : f.optInt("wp_total");
+        boolean routeMismatch = countFull > 0 && wpTotal > 0 && countFull != wpTotal;
+        routeMapView.setProgress(
+                (routeMismatch || f.isNull("wp_index")) ? -1 : f.optInt("wp_index"));
+
+        String loc = f.isNull("localization_status") ? "없음" : f.optString("localization_status");
+        StringBuilder line = new StringBuilder();
+        line.append("측위 ").append(loc);
+        if (!f.isNull("loc_fitness")) {
+            // fitness and inlier ratio are the actual quality numbers; TRACKING
+            // alone hides a fix that is drifting but has not been declared lost.
+            line.append(String.format(Locale.US, "   ·   fitness %.3f", f.optDouble("loc_fitness")));
+        }
+        if (!f.isNull("loc_inlier_ratio")) {
+            line.append(String.format(Locale.US, "   ·   inlier %.0f%%",
+                    f.optDouble("loc_inlier_ratio") * 100.0));
+        }
+        if (!f.isNull("loc_reason") && !f.optString("loc_reason").isEmpty()) {
+            line.append("\n사유 ").append(f.optString("loc_reason"));
+        }
+        if (!f.isNull("wp_index") && !f.isNull("wp_total")) {
+            line.append(String.format(Locale.US, "\n경로 %d/%d",
+                    f.optInt("wp_index"), f.optInt("wp_total")));
+            if (!f.isNull("follower_state")) {
+                line.append("  ·  ").append(f.optString("follower_state"));
+            }
+        }
+        if (routeMismatch) {
+            line.append(String.format(Locale.US,
+                    "\n⚠ 그려진 경로(%d점)와 팔로워 경로(%d점)가 다릅니다 — 진행 표시 숨김",
+                    countFull, wpTotal));
+        }
+        if (px == null) {
+            line.append("\n위치 수신 없음 — 측위가 아직 붙지 않았습니다");
+        } else if (stale) {
+            line.append("\n위치 갱신 끊김 (표시는 마지막 값)");
+        }
+        navStatusText.setText(line.toString());
+        navStatusText.setTextColor(ContextCompat.getColor(this,
+                (px == null || stale || routeMismatch)
+                        ? R.color.status_disconnected_text : R.color.text_secondary));
+    }
+
+    /** Bring-up script progress. The bridge relays the script's own last log line. */
+    private void renderJobSection(JSONObject f) {
+        boolean scripts = f.optBoolean("scripts_enabled", false);
+        int visibility = scripts ? View.VISIBLE : View.GONE;
+        jobStatusText.setVisibility(visibility);
+        stackStartButton.setVisibility(visibility);
+        jobCancelButton.setVisibility(visibility);
+        if (!scripts) {
+            return;
+        }
+
+        String state = f.optString("job_state", "idle");
+        String label = f.isNull("job_label") ? "" : f.optString("job_label");
+        String tail = f.isNull("job_tail") ? "" : f.optString("job_tail");
+        boolean running = "running".equals(state);
+
+        String text;
+        if ("idle".equals(state)) {
+            text = "대기 중";
+        } else if (running) {
+            text = String.format(Locale.US, "%s 진행 중 (%.0f초)\n%s",
+                    label, f.optDouble("job_elapsed_s", 0), tail);
+        } else {
+            // A finished job is history, so stamp it with age and stop painting
+            // it red once it is stale. The live readiness badge above is the
+            // authority on what the robot is doing now -- a failed bring-up from
+            // ten minutes ago must not keep contradicting it after the operator
+            // has fixed the underlying problem by hand.
+            double age = f.optDouble("job_age_s", 0);
+            String when = age < 60 ? String.format(Locale.US, "%.0f초 전", age)
+                                   : String.format(Locale.US, "%.0f분 전", age / 60.0);
+            text = "succeeded".equals(state)
+                    ? String.format(Locale.US, "마지막 기동: %s 완료 (%s)\n%s", label, when, tail)
+                    : String.format(Locale.US, "마지막 기동: %s 실패 코드 %d (%s)\n%s",
+                            label, f.optInt("job_exit_code", -1), when, tail);
+        }
+        boolean freshFailure = "failed".equals(state) && f.optDouble("job_age_s", 0) <= 120;
+        jobStatusText.setText(text);
+        jobStatusText.setTextColor(ContextCompat.getColor(this,
+                freshFailure ? R.color.danger_red
+                             : running ? R.color.text_primary : R.color.text_secondary));
+
+        // Only offer what this NUC actually has, and never queue a second job.
+        JSONObject avail = f.optJSONObject("jobs_available");
+        boolean hasStack = avail != null && avail.optBoolean("stack", false);
+        stackStartButton.setEnabled(hasStack && !running);
+        jobCancelButton.setEnabled(running);
     }
 
     private void setupBackNavigation() {
@@ -496,7 +1094,9 @@ public class MainActivity extends AppCompatActivity {
 
     private void applyPresetLocally(String mode, int presetStepLevel) {
         stepLevel = clampStepLevel(presetStepLevel);
-        stepLevelText.setText(getString(R.string.step_level_value, stepLevel));
+        if (stepLevelText != null) {
+            stepLevelText.setText(getString(R.string.step_level_value, stepLevel));
+        }
         updateDisplayedMode(mode);
         syncModeSelection(mode);
     }
@@ -751,7 +1351,9 @@ public class MainActivity extends AppCompatActivity {
         activePresetId = "";
         renderPresetCards();
         stepLevel = nextStepLevel;
-        stepLevelText.setText(getString(R.string.step_level_value, stepLevel));
+        if (stepLevelText != null) {
+            stepLevelText.setText(getString(R.string.step_level_value, stepLevel));
+        }
 
         JSONObject payload = new JSONObject();
         try {
@@ -828,6 +1430,23 @@ public class MainActivity extends AppCompatActivity {
 
     private void sendCommand(JSONObject payload, String successMessage) {
         rawJsonText.setText("명령 전송 중: " + commandSummary(payload));
+        if (bluetoothClient != null && bluetoothClient.isConnected()) {
+            // "Sent" is all we can honestly claim here: sendJsonCommand only queues
+            // the write. The bridge's {"type":"ack"} reply is what confirms it, and
+            // onLineReceived surfaces that.
+            bluetoothClient.sendJsonCommand(payload);
+            rawJsonText.setText("BT 명령 전송함 (NUC 응답 대기): " + commandSummary(payload));
+            showStatus("Bluetooth: " + successMessage);
+            return;
+        }
+        if (AppConfig.BLUETOOTH_ONLY) {
+            // No silent HTTP fallback: on this build there is no server at the other
+            // end, so a "sent" toast for a STOP press would be a lie.
+            rawJsonText.setText("명령 미전송 — 블루투스가 끊겨 있습니다.");
+            showStatus("블루투스 연결이 끊겼습니다. 명령이 전송되지 않았습니다.");
+            setConnectedUi(false);
+            return;
+        }
         apiClient.sendCommand(payload, new WheelchairApiClient.JsonCallback() {
             @Override
             public void onSuccess(JSONObject response) {
@@ -845,6 +1464,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void syncModeSelection(String mode) {
+        if (modeToggleGroup == null) {
+            return;   // drive mode is a readout in this build, not a selector
+        }
         int checkedButtonId = modeButtonId(mode);
         if (checkedButtonId == 0 || checkedButtonId == modeToggleGroup.getCheckedButtonId()) {
             return;
@@ -929,22 +1551,12 @@ public class MainActivity extends AppCompatActivity {
         return getString(batteryPercent >= 30 ? R.string.battery_status_normal : R.string.battery_status_low);
     }
 
+    /**
+     * The mode selector is gone: drive mode belongs to uart.py and is shown as a
+     * readout. Kept as a no-op so the surviving preset code paths still compile.
+     */
     private int modeButtonId(String mode) {
-        String normalizedMode = mode == null ? "" : mode.toLowerCase(Locale.US);
-        switch (normalizedMode) {
-            case "manual":
-            case "manual_mode":
-                return R.id.manualModeButton;
-            case "assist":
-            case "assist_mode":
-                return R.id.assistModeButton;
-            case "autonomous":
-            case "autonomous_mode":
-            case "auto":
-                return R.id.autonomousModeButton;
-            default:
-                return 0;
-        }
+        return 0;
     }
 
     private Double readDouble(JSONObject object, String key) {

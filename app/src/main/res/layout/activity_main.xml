@@ -124,6 +124,7 @@
             </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cameraCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
@@ -176,6 +177,7 @@
             </com.google.android.material.card.MaterialCardView>
 
             <TextView
+                android:id="@+id/presetSectionTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
@@ -452,12 +454,16 @@
                                 android:textSize="30sp"
                                 android:textStyle="bold" />
 
+                            <!-- speedMpsText is filled with m/s, and this stack
+                                 speaks m/s everywhere (v=0.30, TURN_FLOOR_SPEED,
+                                 the band limits). This label used to read km/h
+                                 over the m/s number, with km/h again underneath. -->
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginStart="4dp"
                                 android:layout_marginBottom="5dp"
-                                android:text="@string/speed_unit_kph"
+                                android:text="@string/speed_unit_mps"
                                 android:textColor="@color/text_secondary"
                                 android:textSize="14sp" />
                         </LinearLayout>
@@ -467,7 +473,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:text="@string/empty_speed_mps"
+                            android:text="@string/empty_speed_kph"
                             android:textColor="@color/text_tertiary"
                             android:textSize="14sp" />
                     </LinearLayout>
@@ -577,46 +583,47 @@
                         android:textSize="28sp"
                         android:textStyle="bold" />
 
-                    <com.google.android.material.button.MaterialButtonToggleGroup
-                        android:id="@+id/modeToggleGroup"
+                    <!-- Drive mode is a readout, not a selector: uart.py owns it and
+                         echoes the truth back on /wheel_status. -->
+                    <TextView
+                        android:id="@+id/driveModeHintText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/drive_mode_hint"
+                        android:textColor="@color/text_tertiary"
+                        android:textSize="12sp" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginTop="14dp"
+                        android:background="@color/control_stroke" />
+
+                    <TextView
+                        android:id="@+id/readinessText"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="14dp"
-                        app:singleSelection="true">
+                        android:background="@color/status_waiting_bg"
+                        android:paddingStart="12dp"
+                        android:paddingTop="10dp"
+                        android:paddingEnd="12dp"
+                        android:paddingBottom="10dp"
+                        android:text="@string/readiness_unknown"
+                        android:textColor="@color/status_waiting_text"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/manualModeButton"
-                            style="?attr/materialButtonOutlinedStyle"
-                            android:layout_width="0dp"
-                            android:layout_height="48dp"
-                            android:layout_weight="1"
-                            android:minWidth="0dp"
-                            android:text="@string/manual_mode_short"
-                            android:textColor="@color/text_primary"
-                            android:textSize="14sp" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/assistModeButton"
-                            style="?attr/materialButtonOutlinedStyle"
-                            android:layout_width="0dp"
-                            android:layout_height="48dp"
-                            android:layout_weight="1"
-                            android:minWidth="0dp"
-                            android:text="@string/assist_mode_short"
-                            android:textColor="@color/text_primary"
-                            android:textSize="14sp" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/autonomousModeButton"
-                            style="?attr/materialButtonOutlinedStyle"
-                            android:layout_width="0dp"
-                            android:layout_height="48dp"
-                            android:layout_weight="1"
-                            android:minWidth="0dp"
-                            android:text="@string/auto_mode_short"
-                            android:textColor="@color/text_primary"
-                            android:textSize="14sp" />
-                    </com.google.android.material.button.MaterialButtonToggleGroup>
+                    <TextView
+                        android:id="@+id/subsystemText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/empty_value"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -638,38 +645,140 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/step_level_label"
+                        android:text="@string/nav_label"
                         android:textColor="@color/text_secondary"
                         android:textSize="14sp" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/stepUpButton"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="64dp"
-                        android:layout_height="48dp"
+                    <com.example.jetsonbtmonitor.RouteMapView
+                        android:id="@+id/routeMapView"
+                        android:layout_width="match_parent"
+                        android:layout_height="220dp"
                         android:layout_marginTop="8dp"
-                        android:text="@string/step_up"
-                        android:textSize="22sp"
-                        app:cornerRadius="8dp" />
+                        android:background="@color/input_background" />
 
                     <TextView
-                        android:id="@+id/stepLevelText"
+                        android:id="@+id/navStatusText"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:gravity="center"
-                        android:text="@string/step_level_format"
+                        android:layout_marginTop="8dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/empty_value"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginTop="16dp"
+                        android:layout_marginBottom="16dp"
+                        android:background="@color/control_stroke" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/stack_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/jobStatusText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/empty_value"
                         android:textColor="@color/text_primary"
-                        android:textSize="34sp"
+                        android:textSize="15sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/stackStartButton"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:minWidth="0dp"
+                            android:text="@string/stack_start"
+                            android:textColor="@color/btn_label_blue"
+                            android:textSize="15sp"
+                            app:cornerRadius="8dp"
+                            app:strokeColor="@color/btn_stroke_blue" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/jobCancelButton"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_marginStart="6dp"
+                            android:layout_weight="1"
+                            android:minWidth="0dp"
+                            android:text="@string/job_cancel"
+                            android:textColor="@color/btn_label_secondary"
+                            android:textSize="15sp"
+                            app:cornerRadius="8dp" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginTop="16dp"
+                        android:layout_marginBottom="16dp"
+                        android:background="@color/control_stroke" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/drive_control_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/followerStatusText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/empty_value"
+                        android:textColor="@color/text_primary"
+                        android:textSize="18sp"
                         android:textStyle="bold" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/stepDownButton"
-                        style="?attr/materialButtonOutlinedStyle"
-                        android:layout_width="64dp"
-                        android:layout_height="48dp"
-                        android:text="@string/step_down"
-                        android:textSize="22sp"
-                        app:cornerRadius="8dp" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/driveStartButton"
+                            android:layout_width="0dp"
+                            android:layout_height="52dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:backgroundTint="@color/btn_fill_green"
+                            android:minWidth="0dp"
+                            android:text="@string/drive_start"
+                            android:textColor="@color/btn_label_on_fill"
+                            android:textSize="16sp"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/driveStopButton"
+                            style="?attr/materialButtonOutlinedStyle"
+                            android:layout_width="0dp"
+                            android:layout_height="52dp"
+                            android:layout_marginStart="6dp"
+                            android:layout_weight="1"
+                            android:minWidth="0dp"
+                            android:text="@string/drive_stop"
+                            android:textColor="@color/btn_label_primary"
+                            android:textSize="16sp"
+                            app:cornerRadius="8dp" />
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -707,13 +816,36 @@
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/stopButton"
                         android:layout_width="match_parent"
-                        android:layout_height="52dp"
+                        android:layout_height="76dp"
                         android:layout_marginTop="14dp"
                         android:backgroundTint="@color/danger_red"
+                        android:letterSpacing="0.08"
                         android:text="@string/stop"
                         android:textColor="@color/white"
-                        android:textSize="18sp"
-                        app:cornerRadius="8dp" />
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        app:cornerRadius="10dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/estopReleaseButton"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:layout_marginTop="10dp"
+                        android:text="@string/estop_release"
+                        android:textColor="@color/btn_label_danger"
+                        android:textSize="16sp"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="@color/btn_stroke_danger" />
+
+                    <TextView
+                        android:id="@+id/estopHintText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/estop_hint"
+                        android:textColor="@color/text_tertiary"
+                        android:textSize="12sp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

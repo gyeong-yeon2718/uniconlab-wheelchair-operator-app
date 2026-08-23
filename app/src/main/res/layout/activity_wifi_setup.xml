@@ -14,7 +14,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/wifi_setup_title"
+            android:text="NUC 휠체어 블루투스 연결"
             android:textColor="@color/text_primary"
             android:textSize="28sp"
             android:textStyle="bold" />
@@ -23,7 +23,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="@string/wifi_setup_description"
+            android:text="NUC 휠체어 보드와 100% 블루투스 SPP 소켓으로 통신합니다. 페어링된 블루투스 기기(NUC)를 선택하고 연결해 주세요."
             android:textColor="@color/text_secondary"
             android:textSize="16sp" />
 
@@ -46,24 +46,24 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/wifi_network_name"
+                    android:text="페어링된 블루투스 기기 선택"
                     android:textColor="@color/text_secondary"
                     android:textSize="14sp" />
 
-                <TextView
+                <Spinner
+                    android:id="@+id/bluetoothDeviceSpinner"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="@string/wheelchair_wifi_ssid"
-                    android:textColor="@color/text_primary"
-                    android:textSize="24sp"
-                    android:textStyle="bold" />
+                    android:layout_height="56dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@color/input_background"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:text="@string/wifi_setup_note"
+                    android:text="목록에 NUC가 없다면 [블루투스 페어링 설정]을 눌러 폰과 NUC를 먼저 페어링해 주세요."
                     android:textColor="@color/text_tertiary"
                     android:textSize="14sp" />
             </LinearLayout>
@@ -74,25 +74,32 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:text="@string/wifi_status_waiting"
+            android:text="블루투스 기기 상태를 확인하는 중..."
             android:textColor="@color/text_secondary"
             android:textSize="15sp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/openWifiSettingsButton"
+            style="?attr/materialButtonOutlinedStyle"
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:layout_marginTop="18dp"
-            android:text="@string/open_wifi_settings"
-            app:cornerRadius="8dp" />
+            android:text="블루투스 페어링 설정"
+            android:textColor="@color/brand_blue"
+            app:cornerRadius="10dp"
+            app:strokeColor="@color/brand_blue" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/checkWifiButton"
             style="?attr/materialButtonOutlinedStyle"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
+            android:layout_height="56dp"
             android:layout_marginTop="10dp"
-            android:text="@string/check_wifi_connection"
-            app:cornerRadius="8dp" />
+            android:backgroundTint="@color/brand_green"
+            android:text="1터치 블루투스 연결"
+            android:textColor="@color/white"
+            android:textSize="17sp"
+            android:textStyle="bold"
+            app:cornerRadius="10dp" />
     </LinearLayout>
 </ScrollView>

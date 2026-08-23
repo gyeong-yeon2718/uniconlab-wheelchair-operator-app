@@ -32,4 +32,11 @@
     <color name="status_reconnecting_text">#8A310F</color>
     <color name="danger_red">#D92D20</color>
     <color name="white">#FFFFFFFF</color>
+    <!-- Disabled control states. Every button in the dashboard pinned a
+         flat textColor/backgroundTint, so setEnabled(false) changed nothing
+         on screen and the operator saw five live-looking buttons that did
+         nothing when pressed. -->
+    <color name="control_disabled_fill">#DDE3EA</color>
+    <color name="control_disabled_text">#98A2B3</color>
+    <color name="control_disabled_stroke">#DDE3EA</color>
 </resources>
