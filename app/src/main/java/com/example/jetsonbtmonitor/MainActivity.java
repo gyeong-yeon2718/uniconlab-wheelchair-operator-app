@@ -89,6 +89,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView followerStatusText;
     private TextView jobStatusText;
     private MaterialButton stackStartButton;
+    private MaterialButton stackStopButton;
     private MaterialButton jobCancelButton;
     private RouteMapView routeMapView;
     private TextView navStatusText;
@@ -362,6 +363,7 @@ public class MainActivity extends AppCompatActivity {
         followerStatusText = findViewById(R.id.followerStatusText);
         jobStatusText = findViewById(R.id.jobStatusText);
         stackStartButton = findViewById(R.id.stackStartButton);
+        stackStopButton = findViewById(R.id.stackStopButton);
         jobCancelButton = findViewById(R.id.jobCancelButton);
         routeMapView = findViewById(R.id.routeMapView);
         // Matches the speed readout's height plus its margin, so the fitted
@@ -424,6 +426,13 @@ public class MainActivity extends AppCompatActivity {
                 "로컬 켜기",
                 "라이다·IMU·측위 노드를 기동합니다.\n\n수 분 걸리며, 휠체어는 움직이지 않습니다.",
                 () -> sendBridgeCommand("stack_start", true, "시스템 기동을 시작했습니다.")));
+        stackStopButton.setOnClickListener(view -> confirmThen(
+                "로컬 끄기",
+                "주행을 멈추고 라이다·IMU·측위 노드를 모두 내립니다."
+                        + System.lineSeparator() + System.lineSeparator()
+                        + "휠체어는 수동 모드로 돌아가 조종간으로 움직입니다. "
+                        + "다시 쓰려면 [로컬 켜기]로 몇 분 걸려 기동해야 합니다.",
+                () -> sendBridgeCommand("stack_stop", true, "로컬 끄기를 요청했습니다.")));
         jobCancelButton.setOnClickListener(view -> confirmThen(
                 "기동 중단",
                 "실행 중인 기동 스크립트를 중단합니다. 계속할까요?",
@@ -717,6 +726,7 @@ public class MainActivity extends AppCompatActivity {
         driveStopButton.setEnabled(false);
         estopReleaseButton.setEnabled(false);
         stackStartButton.setEnabled(false);
+        stackStopButton.setEnabled(false);
         jobCancelButton.setEnabled(false);
     }
 
@@ -790,6 +800,7 @@ public class MainActivity extends AppCompatActivity {
         int visibility = scripts ? View.VISIBLE : View.GONE;
         jobStatusText.setVisibility(visibility);
         stackStartButton.setVisibility(visibility);
+        stackStopButton.setVisibility(visibility);
         jobCancelButton.setVisibility(visibility);
         if (!scripts) {
             return;
@@ -830,6 +841,9 @@ public class MainActivity extends AppCompatActivity {
         JSONObject avail = f.optJSONObject("jobs_available");
         boolean hasStack = avail != null && avail.optBoolean("stack", false);
         stackStartButton.setEnabled(hasStack && !running);
+        // Deliberately usable while a bring-up is running: it is the only real
+        // abort for one, since job_cancel cannot reach the detached sensors.
+        stackStopButton.setEnabled(avail != null && avail.optBoolean("stack_stop", false));
         jobCancelButton.setEnabled(running);
     }
 
