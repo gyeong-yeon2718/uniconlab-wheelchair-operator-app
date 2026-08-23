@@ -472,10 +472,18 @@ public class MainActivity extends AppCompatActivity {
             speedMpsText.setText(R.string.empty_value);
             speedText.setText(R.string.empty_speed_kph);
         }
+        // No node on this stack measures charge. /wheel_status data[7] was
+        // being shown as a percentage, but it only ever reads 88 or 77 and
+        // toggles with motion -- it is a status byte, not a fuel gauge, and a
+        // rider reading it as remaining range would be badly misled.
         if (!f.isNull("battery_percent")) {
             int percent = f.optInt("battery_percent");
             batteryText.setText(String.valueOf(percent));
             batteryStatusText.setText(batteryStatusText(percent));
+        } else if (!f.isNull("wheel_status_byte7")) {
+            batteryText.setText(R.string.empty_value);
+            batteryStatusText.setText(String.format(Locale.US,
+                    "측정 안 됨 · data[7]=%d (용도 미확인)", f.optInt("wheel_status_byte7")));
         } else {
             batteryText.setText(R.string.empty_value);
             batteryStatusText.setText("데이터 없음");
