@@ -130,7 +130,7 @@
     <string name="mode_arm_hint">자동 모드로 바꾸면 조종간 조작이 무시됩니다. 전환만으로는 움직이지 않으며, [주행 시작]을 따로 눌러야 합니다.</string>
     <string name="stack_label">시스템 기동</string>
     <string name="stack_start">로컬 켜기</string>
-    <string name="stack_stop">로컬 끄기</string>
+    <string name="stack_stop">스택 내리기</string>
     <string name="job_cancel">기동 중단</string>
     <string name="nav_label">주행 경로 및 위치</string>
 </resources>

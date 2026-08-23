@@ -427,12 +427,12 @@ public class MainActivity extends AppCompatActivity {
                 "라이다·IMU·측위 노드를 기동합니다.\n\n수 분 걸리며, 휠체어는 움직이지 않습니다.",
                 () -> sendBridgeCommand("stack_start", true, "시스템 기동을 시작했습니다.")));
         stackStopButton.setOnClickListener(view -> confirmThen(
-                "로컬 끄기",
+                "스택 내리기",
                 "주행을 멈추고 라이다·IMU·측위 노드를 모두 내립니다."
                         + System.lineSeparator() + System.lineSeparator()
                         + "휠체어는 수동 모드로 돌아가 조종간으로 움직입니다. "
                         + "다시 쓰려면 [로컬 켜기]로 몇 분 걸려 기동해야 합니다.",
-                () -> sendBridgeCommand("stack_stop", true, "로컬 끄기를 요청했습니다.")));
+                () -> sendBridgeCommand("stack_stop", true, "스택 내리기를 요청했습니다.")));
         jobCancelButton.setOnClickListener(view -> confirmThen(
                 "기동 중단",
                 "실행 중인 기동 스크립트를 중단합니다. 계속할까요?",

@@ -185,20 +185,21 @@
                             android:textColor="@color/btn_label_secondary"
                             android:textSize="15sp"
                             app:cornerRadius="8dp" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/jobCancelButton"
-                            style="?attr/materialButtonOutlinedStyle"
-                            android:layout_width="0dp"
-                            android:layout_height="48dp"
-                            android:layout_marginStart="6dp"
-                            android:layout_weight="1"
-                            android:minWidth="0dp"
-                            android:text="@string/job_cancel"
-                            android:textColor="@color/btn_label_secondary"
-                            android:textSize="15sp"
-                            app:cornerRadius="8dp" />
                     </LinearLayout>
+
+                    <!-- Its own row: three buttons at this width clipped the
+                         label onto a second line that had nowhere to go. -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/jobCancelButton"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="8dp"
+                        android:minWidth="0dp"
+                        android:text="@string/job_cancel"
+                        android:textColor="@color/btn_label_secondary"
+                        android:textSize="14sp"
+                        app:cornerRadius="8dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
