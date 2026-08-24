@@ -41,6 +41,38 @@ public class RouteMapView extends View {
     private static final float BACKDROP_ORIGIN_Y = -129.21f;
     private static final float BACKDROP_RES_M = 0.25f;
 
+    /**
+     * Landmarks, in the map frame. A point cloud shows shapes but not names, and
+     * the dashboard is read by people who may never have been on this campus --
+     * "the chair is here" only means something next to a building they can name.
+     * Positions came from an operator marking them on the rendered map, so they
+     * are placed by someone who knows the place rather than guessed from the
+     * geometry.
+     */
+    private static final class Landmark {
+        final float x;
+        final float y;
+        final String name;
+
+        Landmark(float x, float y, String name) {
+            this.x = x;
+            this.y = y;
+            this.name = name;
+        }
+    }
+
+    private static final Landmark[] LANDMARKS = {
+            new Landmark(-16.0f, -23.5f, "한양대 2번 출구 (애지문)"),
+            new Landmark(69.4f, -17.7f, "국제관"),
+            new Landmark(61.5f, 29.9f, "역사관"),
+            new Landmark(120.8f, -13.0f, "박물관"),
+            new Landmark(196.2f, -46.6f, "신소재공학관"),
+            new Landmark(246.8f, 36.9f, "공업센터본관")
+    };
+
+    private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint labelHalo = new Paint(Paint.ANTI_ALIAS_FLAG);
+
     private Bitmap backdrop;
     private final RectF backdropRect = new RectF();
 
@@ -114,6 +146,17 @@ public class RouteMapView extends View {
         haloPaint.setStrokeWidth(5f);
         haloPaint.setColor(Color.WHITE);
         haloPaint.setStrokeJoin(Paint.Join.ROUND);
+
+        labelPaint.setColor(Color.parseColor("#465A70"));
+        labelPaint.setTextSize(26f);
+        labelPaint.setTextAlign(Paint.Align.CENTER);
+        // Buildings are dark and the ground is light, so the same label crosses
+        // both; a white casing keeps it readable over either.
+        labelHalo.setColor(Color.WHITE);
+        labelHalo.setTextSize(26f);
+        labelHalo.setTextAlign(Paint.Align.CENTER);
+        labelHalo.setStyle(Paint.Style.STROKE);
+        labelHalo.setStrokeWidth(6f);
 
         northPaint.setColor(Color.parseColor("#98A2B3"));
         northPaint.setTextSize(24f);
@@ -252,6 +295,15 @@ public class RouteMapView extends View {
             minY = Math.min(minY, routeY[i]);
             maxY = Math.max(maxY, routeY[i]);
         }
+        // Landmarks are context, so they belong inside the frame -- fitting to
+        // the route alone pushed 애지문 and 공업센터본관, the two ends of the
+        // journey, off the edge.
+        for (Landmark mark : LANDMARKS) {
+            minX = Math.min(minX, mark.x);
+            maxX = Math.max(maxX, mark.x);
+            minY = Math.min(minY, mark.y);
+            maxY = Math.max(maxY, mark.y);
+        }
         for (int i = 0; i < bandLX.length; i++) {
             minX = Math.min(minX, Math.min(bandLX[i], bandRX[i]));
             maxX = Math.max(maxX, Math.max(bandLX[i], bandRX[i]));
@@ -346,6 +398,22 @@ public class RouteMapView extends View {
         int last = routeX.length - 1;
         canvas.drawCircle(offX + (routeX[last] - minX) * scale,
                 offY + (maxY - routeY[last]) * scale, 7f, dotPaint);
+
+        for (Landmark mark : LANDMARKS) {
+            float lx = offX + (mark.x - minX) * scale;
+            float ly = offY + (maxY - mark.y) * scale;
+            if (ly < 0 || ly > getHeight()) {
+                continue;               // off screen at this zoom
+            }
+            // The anchor is inside the view but the text is centred on it, so a
+            // landmark near either edge lost half its name. Pull the text back
+            // in rather than dropping it -- the two that sit at the edges are
+            // the start and the end of the journey.
+            float half = labelPaint.measureText(mark.name) / 2f + 6f;
+            float tx = Math.max(half, Math.min(lx, getWidth() - half));
+            canvas.drawText(mark.name, tx, ly, labelHalo);
+            canvas.drawText(mark.name, tx, ly, labelPaint);
+        }
 
         if (!hasPose) {
             return;
