@@ -1,10 +1,13 @@
 package com.example.jetsonbtmonitor;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.RectF;
 import android.util.AttributeSet;
 import android.view.View;
 
@@ -26,6 +29,20 @@ import org.json.JSONArray;
 public class RouteMapView extends View {
 
     private static final float PAD_PX = 24f;
+
+    /**
+     * Campus backdrop, rendered from the very point cloud the localizer matches
+     * against (tools/render_map_backdrop.py). Because it comes from that cloud
+     * it is already in the map frame -- these three numbers place it, and no
+     * control points or eyeballed fit are involved. Keep them in step with
+     * campus_backdrop.json if the image is ever re-rendered.
+     */
+    private static final float BACKDROP_ORIGIN_X = -47.827f;
+    private static final float BACKDROP_ORIGIN_Y = -129.21f;
+    private static final float BACKDROP_RES_M = 0.25f;
+
+    private Bitmap backdrop;
+    private final RectF backdropRect = new RectF();
 
     /**
      * Height kept clear along the bottom edge for the speed readout that sits
@@ -86,10 +103,10 @@ public class RouteMapView extends View {
         // outlined because the useful reading is how much room is left here,
         // and on a phone-sized view a filled ribbon answers that at a glance.
         bandFill.setStyle(Paint.Style.FILL);
-        bandFill.setColor(Color.parseColor("#D8EEF7"));
+        bandFill.setColor(Color.parseColor("#B7E2F5"));
         bandEdge.setStyle(Paint.Style.STROKE);
         bandEdge.setStrokeWidth(2f);
-        bandEdge.setColor(Color.parseColor("#A8D5E8"));
+        bandEdge.setColor(Color.parseColor("#5FB6DA"));
 
         // A white outline under the chair marker and its arrow, so neither
         // disappears where it sits on top of the route.
@@ -102,6 +119,15 @@ public class RouteMapView extends View {
         northPaint.setTextSize(24f);
         northPaint.setTextAlign(Paint.Align.CENTER);
         northPaint.setStrokeWidth(3f);
+
+        try {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inScaled = false;       // nodpi: the pixels are metres, not dp
+            backdrop = BitmapFactory.decodeResource(
+                    getResources(), R.drawable.campus_backdrop, options);
+        } catch (OutOfMemoryError ignored) {
+            backdrop = null;                // the route alone still draws
+        }
 
         textPaint.setColor(Color.parseColor("#98A2B3"));
         textPaint.setTextSize(30f);
@@ -252,6 +278,20 @@ public class RouteMapView extends View {
         // ROS x-forward/y-left -> screen x-right/y-down.
         // sx/sy are computed inline below from these.
         int done = Math.max(0, Math.min(progressIndex, routeX.length - 1));
+
+        // Campus first of all: buildings, tree lines and road edges, so someone
+        // who has never been to this campus can tell what they are looking at.
+        if (backdrop != null) {
+            float left = offX + (BACKDROP_ORIGIN_X - minX) * scale;
+            float bottom = offY + (maxY - BACKDROP_ORIGIN_Y) * scale;
+            float widthM = backdrop.getWidth() * BACKDROP_RES_M;
+            float heightM = backdrop.getHeight() * BACKDROP_RES_M;
+            backdropRect.set(left,
+                             bottom - heightM * scale,
+                             left + widthM * scale,
+                             bottom);
+            canvas.drawBitmap(backdrop, null, backdropRect, null);
+        }
 
         // Corridor first, so everything else sits on top of it.
         if (bandLX.length >= 2) {
