@@ -396,15 +396,53 @@
                                 android:textColor="@color/text_secondary"
                                 android:textSize="13sp" />
 
-                            <TextView
-                                android:id="@+id/speedText"
+                        </LinearLayout>
+
+                        <!-- Same reserved band, other end. Wheel battery: the
+                             motor controller's own gauge, 8 coarse steps. -->
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="bottom|end"
+                            android:layout_marginEnd="10dp"
+                            android:layout_marginBottom="8dp"
+                            android:gravity="bottom|end"
+                            android:orientation="vertical">
+
+                            <LinearLayout
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_marginStart="10dp"
-                                android:layout_marginBottom="4dp"
-                                android:text="@string/empty_speed_kph"
+                                android:layout_gravity="end"
+                                android:gravity="bottom"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:id="@+id/batteryText"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/empty_numeric"
+                                    android:textColor="@color/text_primary"
+                                    android:textSize="22sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="2dp"
+                                    android:layout_marginBottom="3dp"
+                                    android:text="@string/battery_unit"
+                                    android:textColor="@color/text_secondary"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:id="@+id/batteryStatusText"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_gravity="end"
+                                android:text="@string/battery_wheel_label"
                                 android:textColor="@color/text_tertiary"
-                                android:textSize="13sp" />
+                                android:textSize="11sp" />
                         </LinearLayout>
                     </FrameLayout>
 

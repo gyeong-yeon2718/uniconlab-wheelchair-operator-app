@@ -54,6 +54,9 @@ public class RouteMapView extends View {
     private final Paint chairPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
+    private final Path arrow = new Path();
+    private final Paint haloPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint northPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     public RouteMapView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -71,6 +74,18 @@ public class RouteMapView extends View {
 
         dotPaint.setColor(Color.parseColor("#98A2B3"));
         chairPaint.setColor(Color.parseColor("#12805C"));
+        // A white outline under the chair marker and its arrow, so neither
+        // disappears where it sits on top of the route.
+        haloPaint.setStyle(Paint.Style.STROKE);
+        haloPaint.setStrokeWidth(5f);
+        haloPaint.setColor(Color.WHITE);
+        haloPaint.setStrokeJoin(Paint.Join.ROUND);
+
+        northPaint.setColor(Color.parseColor("#98A2B3"));
+        northPaint.setTextSize(24f);
+        northPaint.setTextAlign(Paint.Align.CENTER);
+        northPaint.setStrokeWidth(3f);
+
         textPaint.setColor(Color.parseColor("#98A2B3"));
         textPaint.setTextSize(30f);
         textPaint.setTextAlign(Paint.Align.CENTER);
@@ -134,6 +149,22 @@ public class RouteMapView extends View {
 
     public int getCountFull() {
         return countFull;
+    }
+
+    /**
+     * Which way is north. The route is drawn in the map frame, whose x axis is
+     * where the chair was pointing when the map was built -- so "up" on this
+     * view is not north and there was nothing on screen saying so.
+     */
+    private void drawNorth(Canvas canvas) {
+        float x = getWidth() - 30f;
+        float y = 34f;
+        northPaint.setStyle(Paint.Style.STROKE);
+        canvas.drawLine(x, y + 16f, x, y - 10f, northPaint);
+        canvas.drawLine(x, y - 10f, x - 6f, y - 2f, northPaint);
+        canvas.drawLine(x, y - 10f, x + 6f, y - 2f, northPaint);
+        northPaint.setStyle(Paint.Style.FILL);
+        canvas.drawText("N", x, y + 36f, northPaint);
     }
 
     @Override
@@ -215,13 +246,31 @@ public class RouteMapView extends View {
         float cy = offY + (maxY - poseY) * scale;
         chairPaint.setColor(poseStale ? Color.parseColor("#98A2B3")
                                       : Color.parseColor("#12805C"));
-        canvas.drawCircle(cx, cy, 13f, chairPaint);
+        chairPaint.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(cx, cy, 11f, haloPaint);
+        canvas.drawCircle(cx, cy, 11f, chairPaint);
 
-        // Heading tick. Screen y is inverted, hence the minus on sin.
+        // Heading. A line was too easy to lose against the route at a glance,
+        // and which end of it was the front took a moment to work out. A filled
+        // arrowhead reads direction immediately, and the halo keeps it visible
+        // where it crosses the drawn line.
         double rad = Math.toRadians(poseYawDeg);
-        chairPaint.setStrokeWidth(5f);
-        canvas.drawLine(cx, cy,
-                cx + (float) (Math.cos(rad) * 26.0),
-                cy - (float) (Math.sin(rad) * 26.0), chairPaint);
+        float tipX = cx + (float) (Math.cos(rad) * 40.0);
+        float tipY = cy - (float) (Math.sin(rad) * 40.0);
+        double left = rad + Math.toRadians(140);
+        double right = rad - Math.toRadians(140);
+        arrow.reset();
+        arrow.moveTo(tipX, tipY);
+        arrow.lineTo(tipX + (float) (Math.cos(left) * 24.0),
+                     tipY - (float) (Math.sin(left) * 24.0));
+        arrow.lineTo(cx + (float) (Math.cos(rad) * 6.0),
+                     cy - (float) (Math.sin(rad) * 6.0));
+        arrow.lineTo(tipX + (float) (Math.cos(right) * 24.0),
+                     tipY - (float) (Math.sin(right) * 24.0));
+        arrow.close();
+        canvas.drawPath(arrow, haloPaint);
+        canvas.drawPath(arrow, chairPaint);
+
+        drawNorth(canvas);
     }
 }

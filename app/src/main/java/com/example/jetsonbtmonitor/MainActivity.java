@@ -11,6 +11,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -58,7 +59,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView connectionStateText;
     private TextView bluetoothBadgeText;
     private TextView speedMpsText;
-    private TextView speedText;
+    private TextView batteryText;
+    private TextView batteryStatusText;
     private TextView modeText;
     private TextView stepLevelText;
     private TextView systemStateText;
@@ -167,6 +169,13 @@ public class MainActivity extends AppCompatActivity {
         }
 
         setContentView(R.layout.activity_main);
+        // The Bluetooth build starts no foreground service, so once the screen
+        // times out Android is free to freeze this process -- the RFCOMM read
+        // thread stops, and the link drops with no error anyone sees until the
+        // dashboard is opened again. That is the shape of the intermittent
+        // disconnects reported from the field. An operator watching a moving
+        // wheelchair wants the screen on regardless.
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         apiClient = new WheelchairApiClient(AppConfig.JETSON_API_BASE_URL);
         bindViews();
         setupActions();
@@ -297,7 +306,6 @@ public class MainActivity extends AppCompatActivity {
             if (update.getSpeedKph() != null) {
                 double speedMps = update.getSpeedKph() / 3.6;
                 speedMpsText.setText(speedFormat.format(speedMps));
-                speedText.setText(speedFormat.format(update.getSpeedKph()) + " km/h");
             }
             if (update.getMode() != null) {
                 updateDisplayedMode(update.getMode());
@@ -335,7 +343,8 @@ public class MainActivity extends AppCompatActivity {
             bluetoothBadgeText.setText("BT");
         }
         speedMpsText = findViewById(R.id.speedMpsText);
-        speedText = findViewById(R.id.speedText);
+        batteryText = findViewById(R.id.batteryText);
+        batteryStatusText = findViewById(R.id.batteryStatusText);
         modeText = findViewById(R.id.modeText);
         systemStateText = findViewById(R.id.systemStateText);
         rawJsonText = findViewById(R.id.rawJsonText);
@@ -409,13 +418,16 @@ public class MainActivity extends AppCompatActivity {
         // after bring-up. The rider has to judge a different thing in each case,
         // so the dialog asks the question that belongs to the state it is in.
         estopReleaseButton.setOnClickListener(view -> confirmThen(
-                estopEngaged ? "E-STOP 해제" : "자동 모드 전환",
+                estopEngaged ? "E-STOP 해제" : "시동 + 주행",
                 estopEngaged
-                        ? "휠체어 주변이 안전한지 확인하셨습니까?\n\n해제해도 주행은 재개되지 않습니다."
-                        : "베이스를 자동 모드로 전환합니다.\n\n조종간 조작이 무시되며, "
-                          + "전환만으로는 움직이지 않습니다. 주행은 [주행 시작]을 따로 눌러야 합니다.",
-                () -> sendBridgeCommand("estop_release", true,
-                        estopEngaged ? "E-STOP 해제를 요청했습니다." : "자동 모드 전환을 요청했습니다.")));
+                        ? "휠체어 주변이 안전한지 확인하셨습니까?"
+                          + System.lineSeparator() + System.lineSeparator()
+                          + "해제와 동시에 멈춘 지점부터 주행을 이어서 시작합니다."
+                        : "자동 모드로 전환하고 곧바로 주행을 시작합니다."
+                          + System.lineSeparator() + System.lineSeparator()
+                          + "휠체어가 즉시 움직입니다. 조종간 조작은 무시됩니다.",
+                () -> sendBridgeCommand("arm_and_drive", true,
+                        "시동 + 주행을 요청했습니다.")));
         driveStartButton.setOnClickListener(view -> confirmThen(
                 "주행 시작",
                 "휠체어가 즉시 움직이기 시작합니다. 계속할까요?",
@@ -493,13 +505,31 @@ public class MainActivity extends AppCompatActivity {
         if (!f.isNull("speed_mps")) {
             double mps = f.optDouble("speed_mps");
             speedMpsText.setText(speedFormat.format(mps));
-            speedText.setText(speedFormat.format(mps * 3.6) + " km/h");
         } else {
             // No fresh odometry. Leaving the last number on screen would show a
             // speed the chair had some unknown time ago as if it were current.
             speedMpsText.setText(R.string.empty_value);
-            speedText.setText(R.string.empty_speed_kph);
         }
+        // Wheel battery: the motor controller's own gauge, 8 coarse steps of
+        // 11 over 0..88. Only readings taken with the wheels still are shown --
+        // under motor current it sits a step low, and a figure that drops 12%
+        // every time the chair sets off would be read as a fault.
+        if (!f.isNull("battery_percent")) {
+            batteryText.setText(String.valueOf(f.optInt("battery_percent")));
+            String detail = getString(R.string.battery_wheel_label);
+            if (!f.isNull("battery_level") && !f.isNull("battery_level_full")) {
+                detail = String.format(Locale.US, "%s %d/%d", detail,
+                        f.optInt("battery_level"), f.optInt("battery_level_full"));
+            }
+            if (f.optBoolean("battery_under_load", false)) {
+                detail = detail + " · 주행 중 " + f.optInt("battery_raw", 0);
+            }
+            batteryStatusText.setText(detail);
+        } else {
+            batteryText.setText(R.string.empty_value);
+            batteryStatusText.setText(getString(R.string.battery_wheel_label) + " 데이터 없음");
+        }
+
         boolean estop = f.optBoolean("estop_engaged", false);
         boolean pending = f.optBoolean("estop_pending", false);
         // Manual after bring-up is the normal resting state, not an emergency.
@@ -677,7 +707,7 @@ public class MainActivity extends AppCompatActivity {
                 R.color.status_connecting_text);
         connectionStateText.setText("텔레메트리 수신 끊김 — 재연결 시도 중");
         speedMpsText.setText(R.string.empty_value);
-        speedText.setText(R.string.empty_speed_kph);
+        batteryText.setText(R.string.empty_value);
         readinessText.setText("링크 끊김 — 표시된 값은 마지막 수신 값입니다");
         readinessText.setBackgroundColor(
                 ContextCompat.getColor(this, R.color.status_reconnecting_bg));
@@ -1352,7 +1382,6 @@ public class MainActivity extends AppCompatActivity {
         boolean hasTelemetry = speedKph != null || batteryPercent != null || !mode.trim().isEmpty();
 
         speedMpsText.setText(speedKph == null ? "--" : speedFormat.format(speedKph));
-        speedText.setText(speedKph == null ? getString(R.string.empty_speed_mps) : speedFormat.format(speedKph / 3.6) + " m/s");
         updateDisplayedMode(mode);
         systemStateText.setText(hasTelemetry ? R.string.system_state_running : R.string.system_state_waiting);
         rawJsonText.setText(telemetryStatusText(speedKph, batteryPercent, displayModeForTelemetry(mode), telemetry));
