@@ -37,6 +37,11 @@ public class RouteMapView extends View {
 
     private float[] routeX = new float[0];
     private float[] routeY = new float[0];
+    /** Drivable corridor edges, same map frame as the route. */
+    private float[] bandLX = new float[0];
+    private float[] bandLY = new float[0];
+    private float[] bandRX = new float[0];
+    private float[] bandRY = new float[0];
     private int progressIndex = -1;
     /** Points are sent thinned; wp_index counts the FULL route, so divide. */
     private int stride = 1;
@@ -54,7 +59,10 @@ public class RouteMapView extends View {
     private final Paint chairPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
+    private final Path band = new Path();
     private final Path arrow = new Path();
+    private final Paint bandFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint bandEdge = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint haloPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint northPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
@@ -74,6 +82,15 @@ public class RouteMapView extends View {
 
         dotPaint.setColor(Color.parseColor("#98A2B3"));
         chairPaint.setColor(Color.parseColor("#12805C"));
+        // The corridor the chair is allowed to use. Filled rather than
+        // outlined because the useful reading is how much room is left here,
+        // and on a phone-sized view a filled ribbon answers that at a glance.
+        bandFill.setStyle(Paint.Style.FILL);
+        bandFill.setColor(Color.parseColor("#D8EEF7"));
+        bandEdge.setStyle(Paint.Style.STROKE);
+        bandEdge.setStrokeWidth(2f);
+        bandEdge.setColor(Color.parseColor("#A8D5E8"));
+
         // A white outline under the chair marker and its arrow, so neither
         // disappears where it sits on top of the route.
         haloPaint.setStyle(Paint.Style.STROKE);
@@ -96,6 +113,30 @@ public class RouteMapView extends View {
         this.stride = Math.max(1, stride);
         this.countFull = countFull;
         setRoute(points);
+    }
+
+    /** Corridor edges arrive in the same route frame as the centreline. */
+    public void setBand(JSONArray left, JSONArray right) {
+        int n = Math.min(left == null ? 0 : left.length(),
+                         right == null ? 0 : right.length());
+        float[] lx = new float[n], ly = new float[n];
+        float[] rx = new float[n], ry = new float[n];
+        for (int i = 0; i < n; i++) {
+            JSONArray l = left.optJSONArray(i);
+            JSONArray r = right.optJSONArray(i);
+            if (l == null || r == null || l.length() < 2 || r.length() < 2) {
+                continue;
+            }
+            lx[i] = (float) l.optDouble(0, 0);
+            ly[i] = (float) l.optDouble(1, 0);
+            rx[i] = (float) r.optDouble(0, 0);
+            ry[i] = (float) r.optDouble(1, 0);
+        }
+        bandLX = lx;
+        bandLY = ly;
+        bandRX = rx;
+        bandRY = ry;
+        invalidate();
     }
 
     public void setRoute(JSONArray points) {
@@ -185,6 +226,12 @@ public class RouteMapView extends View {
             minY = Math.min(minY, routeY[i]);
             maxY = Math.max(maxY, routeY[i]);
         }
+        for (int i = 0; i < bandLX.length; i++) {
+            minX = Math.min(minX, Math.min(bandLX[i], bandRX[i]));
+            maxX = Math.max(maxX, Math.max(bandLX[i], bandRX[i]));
+            minY = Math.min(minY, Math.min(bandLY[i], bandRY[i]));
+            maxY = Math.max(maxY, Math.max(bandLY[i], bandRY[i]));
+        }
         if (hasPose) {
             minX = Math.min(minX, poseX);
             maxX = Math.max(maxX, poseX);
@@ -205,6 +252,27 @@ public class RouteMapView extends View {
         // ROS x-forward/y-left -> screen x-right/y-down.
         // sx/sy are computed inline below from these.
         int done = Math.max(0, Math.min(progressIndex, routeX.length - 1));
+
+        // Corridor first, so everything else sits on top of it.
+        if (bandLX.length >= 2) {
+            band.reset();
+            for (int i = 0; i < bandLX.length; i++) {
+                float sx = offX + (bandLX[i] - minX) * scale;
+                float sy = offY + (maxY - bandLY[i]) * scale;
+                if (i == 0) {
+                    band.moveTo(sx, sy);
+                } else {
+                    band.lineTo(sx, sy);
+                }
+            }
+            for (int i = bandRX.length - 1; i >= 0; i--) {
+                band.lineTo(offX + (bandRX[i] - minX) * scale,
+                            offY + (maxY - bandRY[i]) * scale);
+            }
+            band.close();
+            canvas.drawPath(band, bandFill);
+            canvas.drawPath(band, bandEdge);
+        }
 
         path.reset();
         for (int i = 0; i <= done; i++) {
@@ -247,26 +315,30 @@ public class RouteMapView extends View {
         chairPaint.setColor(poseStale ? Color.parseColor("#98A2B3")
                                       : Color.parseColor("#12805C"));
         chairPaint.setStyle(Paint.Style.FILL);
-        canvas.drawCircle(cx, cy, 11f, haloPaint);
-        canvas.drawCircle(cx, cy, 11f, chairPaint);
+        canvas.drawCircle(cx, cy, 17f, haloPaint);
+        canvas.drawCircle(cx, cy, 17f, chairPaint);
 
         // Heading. A line was too easy to lose against the route at a glance,
         // and which end of it was the front took a moment to work out. A filled
         // arrowhead reads direction immediately, and the halo keeps it visible
         // where it crosses the drawn line.
+        // Smaller than before and sitting just clear of the dot, but with a
+        // sharper point: what makes a heading readable is the angle at the tip,
+        // not the length of the thing.
         double rad = Math.toRadians(poseYawDeg);
-        float tipX = cx + (float) (Math.cos(rad) * 40.0);
-        float tipY = cy - (float) (Math.sin(rad) * 40.0);
-        double left = rad + Math.toRadians(140);
-        double right = rad - Math.toRadians(140);
+        float baseX = cx + (float) (Math.cos(rad) * 15.0);
+        float baseY = cy - (float) (Math.sin(rad) * 15.0);
+        float tipX = cx + (float) (Math.cos(rad) * 36.0);
+        float tipY = cy - (float) (Math.sin(rad) * 36.0);
+        double left = rad + Math.PI / 2;
+        double right = rad - Math.PI / 2;
+        float halfWidth = 10f;
         arrow.reset();
         arrow.moveTo(tipX, tipY);
-        arrow.lineTo(tipX + (float) (Math.cos(left) * 24.0),
-                     tipY - (float) (Math.sin(left) * 24.0));
-        arrow.lineTo(cx + (float) (Math.cos(rad) * 6.0),
-                     cy - (float) (Math.sin(rad) * 6.0));
-        arrow.lineTo(tipX + (float) (Math.cos(right) * 24.0),
-                     tipY - (float) (Math.sin(right) * 24.0));
+        arrow.lineTo(baseX + (float) (Math.cos(left) * halfWidth),
+                     baseY - (float) (Math.sin(left) * halfWidth));
+        arrow.lineTo(baseX + (float) (Math.cos(right) * halfWidth),
+                     baseY - (float) (Math.sin(right) * halfWidth));
         arrow.close();
         canvas.drawPath(arrow, haloPaint);
         canvas.drawPath(arrow, chairPaint);

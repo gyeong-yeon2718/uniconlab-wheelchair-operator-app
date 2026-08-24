@@ -254,6 +254,8 @@ public class MainActivity extends AppCompatActivity {
                         JSONObject frame = new JSONObject(line);
                         String type = frame.optString("type");
                         if ("route".equals(type)) {
+                            routeMapView.setBand(frame.optJSONArray("band_left"),
+                                    frame.optJSONArray("band_right"));
                             routeMapView.setRoute(frame.optJSONArray("points"),
                                     frame.optInt("stride", 1),
                                     frame.optInt("count_full", frame.optInt("count")));
