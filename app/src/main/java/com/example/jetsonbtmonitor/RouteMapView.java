@@ -147,16 +147,21 @@ public class RouteMapView extends View {
         haloPaint.setColor(Color.WHITE);
         haloPaint.setStrokeJoin(Paint.Join.ROUND);
 
-        labelPaint.setColor(Color.parseColor("#465A70"));
-        labelPaint.setTextSize(26f);
+        // Near-black rather than the grey-blue it was: the backdrop runs from
+        // near-white ground to dark building faces, and a mid-tone label lost
+        // contrast against both ends of that range.
+        labelPaint.setColor(Color.parseColor("#10243A"));
+        labelPaint.setTextSize(34f);
         labelPaint.setTextAlign(Paint.Align.CENTER);
-        // Buildings are dark and the ground is light, so the same label crosses
-        // both; a white casing keeps it readable over either.
+        labelPaint.setFakeBoldText(true);
+        // A heavier white casing, because the same label crosses light ground
+        // and dark buildings within its own width.
         labelHalo.setColor(Color.WHITE);
-        labelHalo.setTextSize(26f);
+        labelHalo.setTextSize(34f);
         labelHalo.setTextAlign(Paint.Align.CENTER);
+        labelHalo.setFakeBoldText(true);
         labelHalo.setStyle(Paint.Style.STROKE);
-        labelHalo.setStrokeWidth(6f);
+        labelHalo.setStrokeWidth(9f);
 
         northPaint.setColor(Color.parseColor("#98A2B3"));
         northPaint.setTextSize(24f);

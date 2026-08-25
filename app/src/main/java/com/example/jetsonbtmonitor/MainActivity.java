@@ -59,8 +59,6 @@ public class MainActivity extends AppCompatActivity {
     private TextView connectionStateText;
     private TextView bluetoothBadgeText;
     private TextView speedMpsText;
-    private TextView batteryText;
-    private TextView batteryStatusText;
     private TextView modeText;
     private TextView stepLevelText;
     private TextView systemStateText;
@@ -345,8 +343,6 @@ public class MainActivity extends AppCompatActivity {
             bluetoothBadgeText.setText("BT");
         }
         speedMpsText = findViewById(R.id.speedMpsText);
-        batteryText = findViewById(R.id.batteryText);
-        batteryStatusText = findViewById(R.id.batteryStatusText);
         modeText = findViewById(R.id.modeText);
         systemStateText = findViewById(R.id.systemStateText);
         rawJsonText = findViewById(R.id.rawJsonText);
@@ -512,26 +508,6 @@ public class MainActivity extends AppCompatActivity {
             // speed the chair had some unknown time ago as if it were current.
             speedMpsText.setText(R.string.empty_value);
         }
-        // Wheel battery: the motor controller's own gauge, 8 coarse steps of
-        // 11 over 0..88. Only readings taken with the wheels still are shown --
-        // under motor current it sits a step low, and a figure that drops 12%
-        // every time the chair sets off would be read as a fault.
-        if (!f.isNull("battery_percent")) {
-            batteryText.setText(String.valueOf(f.optInt("battery_percent")));
-            String detail = getString(R.string.battery_wheel_label);
-            if (!f.isNull("battery_level") && !f.isNull("battery_level_full")) {
-                detail = String.format(Locale.US, "%s %d/%d", detail,
-                        f.optInt("battery_level"), f.optInt("battery_level_full"));
-            }
-            if (f.optBoolean("battery_under_load", false)) {
-                detail = detail + " · 주행 중 " + f.optInt("battery_raw", 0);
-            }
-            batteryStatusText.setText(detail);
-        } else {
-            batteryText.setText(R.string.empty_value);
-            batteryStatusText.setText(getString(R.string.battery_wheel_label) + " 데이터 없음");
-        }
-
         boolean estop = f.optBoolean("estop_engaged", false);
         boolean pending = f.optBoolean("estop_pending", false);
         // Manual after bring-up is the normal resting state, not an emergency.
@@ -709,7 +685,6 @@ public class MainActivity extends AppCompatActivity {
                 R.color.status_connecting_text);
         connectionStateText.setText("텔레메트리 수신 끊김 — 재연결 시도 중");
         speedMpsText.setText(R.string.empty_value);
-        batteryText.setText(R.string.empty_value);
         readinessText.setText("링크 끊김 — 표시된 값은 마지막 수신 값입니다");
         readinessText.setBackgroundColor(
                 ContextCompat.getColor(this, R.color.status_reconnecting_bg));
