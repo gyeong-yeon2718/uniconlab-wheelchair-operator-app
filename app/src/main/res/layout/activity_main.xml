@@ -186,15 +186,16 @@
                         android:textSize="14sp"
                         android:textStyle="bold" />
 
-                    <TextView
-                        android:id="@+id/subsystemText"
+                    <!-- One row per subsystem instead of three wrapped lines. Each row is a
+                         coloured state chip and a value, because these four are what
+                         decide whether the chair may drive and the old block made
+                         them all look equally unimportant. -->
+                    <LinearLayout
+                        android:id="@+id/subsystemGrid"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:lineSpacingExtra="3dp"
-                        android:text="@string/empty_value"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="13sp" />
+                        android:layout_marginTop="4dp"
+                        android:orientation="vertical" />
 
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

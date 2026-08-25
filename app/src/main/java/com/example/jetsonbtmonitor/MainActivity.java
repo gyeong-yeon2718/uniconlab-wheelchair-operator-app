@@ -85,7 +85,7 @@ public class MainActivity extends AppCompatActivity {
     private MaterialButton driveStartButton;
     private MaterialButton driveStopButton;
     private TextView readinessText;
-    private TextView subsystemText;
+    private LinearLayout subsystemGrid;
     private TextView followerStatusText;
     private TextView jobStatusText;
     private MaterialButton stackStartButton;
@@ -366,7 +366,7 @@ public class MainActivity extends AppCompatActivity {
         driveStartButton = findViewById(R.id.driveStartButton);
         driveStopButton = findViewById(R.id.driveStopButton);
         readinessText = findViewById(R.id.readinessText);
-        subsystemText = findViewById(R.id.subsystemText);
+        subsystemGrid = findViewById(R.id.subsystemGrid);
         followerStatusText = findViewById(R.id.followerStatusText);
         jobStatusText = findViewById(R.id.jobStatusText);
         stackStartButton = findViewById(R.id.stackStartButton);
@@ -556,17 +556,7 @@ public class MainActivity extends AppCompatActivity {
         readinessText.setBackgroundColor(ContextCompat.getColor(this, bg));
         readinessText.setTextColor(ContextCompat.getColor(this, fg));
 
-        subsystemText.setText(String.format(Locale.US,
-                "휠 링크 %s   ·   측위 %s   ·   경사 %s\n장애물 %s\n결함 %s",
-                f.optBoolean("wheel_link_ok", false) ? "정상" : "끊김",
-                subsystemValue(f, "localization_status"),
-                subsystemValue(f, "tip_guard_status"),
-                subsystemValue(f, "objects_summary"),
-                subsystemValue(f, "robot_fault")));
-        // A missing reading is a different fact from a clean one, and the line
-        // greys as a whole so the difference is visible without reading it.
-        subsystemText.setTextColor(ContextCompat.getColor(this,
-                hasUnavailableSubsystem(f) ? R.color.text_tertiary : R.color.text_secondary));
+        renderSubsystems(f);
 
         String followerStatus = f.isNull("follower_status")
                 ? getString(R.string.empty_value) : f.optString("follower_status");
@@ -637,11 +627,9 @@ public class MainActivity extends AppCompatActivity {
                 ContextCompat.getColor(this, R.color.status_reconnecting_bg));
         readinessText.setTextColor(
                 ContextCompat.getColor(this, R.color.status_disconnected_text));
-        subsystemText.setText("NUC에서 브릿지가 실행 중인지 확인하세요:\n"
-                + "  ./scripts/nuc_bridge_restart.sh --allow-commands --allow-scripts\n"
-                + "브릿지가 꺼져 있으면 SPP 레코드가 사라지고, 앱이 다른 서비스에 붙습니다.");
-        subsystemText.setTextColor(
-                ContextCompat.getColor(this, R.color.status_disconnected_text));
+        subsystemGrid.removeAllViews();
+        addSubsystemRow("브릿지", "NUC에서 실행 중인지 확인", STATE_BAD);
+        addSubsystemRow("복구", "nuc_bridge_restart.sh", STATE_UNKNOWN);
         // Nothing here is real, so nothing here may be commanded.
         disableRobotControls();
         setConnectionState(getString(R.string.connection_reconnecting),
@@ -694,6 +682,159 @@ public class MainActivity extends AppCompatActivity {
         if (bluetoothClient != null) {
             bluetoothClient.forceReconnect();
         }
+    }
+
+    /** A subsystem row: green when it is fine, amber when unknown, red when not. */
+    private void addSubsystemRow(String name, String value, int state) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(7), 0, dp(7));
+
+        View chip = new View(this);
+        LinearLayout.LayoutParams chipParams =
+                new LinearLayout.LayoutParams(dp(10), dp(10));
+        chipParams.setMarginEnd(dp(10));
+        chip.setLayoutParams(chipParams);
+        chip.setBackgroundResource(state == STATE_OK ? R.drawable.status_dot_connected
+                : state == STATE_BAD ? R.drawable.status_dot_disconnected
+                : R.drawable.status_dot_connecting);
+        row.addView(chip);
+
+        TextView label = new TextView(this);
+        label.setText(name);
+        label.setTextSize(15f);
+        label.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+        label.setLayoutParams(new LinearLayout.LayoutParams(dp(104),
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        row.addView(label);
+
+        TextView reading = new TextView(this);
+        reading.setText(value);
+        reading.setTextSize(17f);
+        reading.setTypeface(null, android.graphics.Typeface.BOLD);
+        reading.setTextColor(ContextCompat.getColor(this,
+                state == STATE_OK ? R.color.status_connected_text
+                        : state == STATE_BAD ? R.color.status_disconnected_text
+                        : R.color.text_primary));
+        row.addView(reading);
+        subsystemGrid.addView(row);
+    }
+
+    private static final int STATE_OK = 0;
+    private static final int STATE_UNKNOWN = 1;
+    private static final int STATE_BAD = 2;
+
+    private int dp(float value) {
+        return Math.round(getResources().getDisplayMetrics().density * value);
+    }
+
+    /**
+     * The four readings that decide whether the chair may drive, each with the
+     * number behind it rather than a bare OK. 경사 used to be printed from the
+     * tip guard's status, which reports no angle at all -- it says OK/STALE and
+     * the speed it is passing through. The real tilt comes from the localizer's
+     * own pose, whose map frame FAST-LIO builds gravity-aligned.
+     */
+    private void renderSubsystems(JSONObject f) {
+        subsystemGrid.removeAllViews();
+
+        boolean wheel = f.optBoolean("wheel_link_ok", false);
+        addSubsystemRow("휠 링크", wheel ? "정상" : "끊김",
+                wheel ? STATE_OK : STATE_BAD);
+
+        String loc = f.isNull("localization_status") ? null : f.optString("localization_status");
+        String locValue = loc == null ? "데이터 없음" : loc;
+        if (loc != null && !f.isNull("loc_inlier_ratio")) {
+            locValue = String.format(Locale.US, "%s  ·  inlier %.0f%%", loc,
+                    f.optDouble("loc_inlier_ratio") * 100.0);
+        }
+        addSubsystemRow("Localization", locValue,
+                loc == null ? STATE_UNKNOWN
+                        : "TRACKING".equals(loc) ? STATE_OK : STATE_BAD);
+
+        // Tilt, in degrees, from the pose quaternion.
+        if (f.isNull("pose_roll_deg") || f.isNull("pose_pitch_deg")) {
+            addSubsystemRow("차체 기울기", "데이터 없음", STATE_UNKNOWN);
+        } else {
+            double roll = f.optDouble("pose_roll_deg");
+            double pitch = f.optDouble("pose_pitch_deg");
+            double worst = Math.max(Math.abs(roll), Math.abs(pitch));
+            addSubsystemRow("차체 기울기",
+                    String.format(Locale.US, "피치 %.1f°  ·  롤 %.1f°", pitch, roll),
+                    worst >= 8.0 ? STATE_BAD : STATE_OK);
+        }
+
+        addSubsystemRow("장애물", obstacleSummary(f), obstacleState(f));
+        addSubsystemRow("속도 게이트", gateSummary(f),
+                f.isNull("tip_guard_status") ? STATE_UNKNOWN
+                        : f.optString("tip_guard_status").startsWith("OK")
+                                ? STATE_OK : STATE_BAD);
+    }
+
+    /**
+     * A cluster is one group of lidar returns that obstacle_clusters.py has
+     * decided is a thing. The count alone never mattered -- what stops the chair
+     * is a cluster whose returns fall inside the safety band, so that is the
+     * number shown first, with how far away the nearest one is.
+     */
+    private String obstacleSummary(JSONObject f) {
+        if (f.isNull("objects_status")) {
+            return "데이터 없음";
+        }
+        if (!"OK".equals(f.optString("objects_status"))) {
+            return f.optString("objects_status");   // NO_CLOUD and friends
+        }
+        int inBand = f.isNull("objects_in_band") ? 0 : f.optInt("objects_in_band");
+        StringBuilder text = new StringBuilder();
+        if (inBand > 0) {
+            text.append(String.format(Locale.US, "경로 위 %d개", inBand));
+            if (!f.isNull("objects_nearest_in_band_m")) {
+                text.append(String.format(Locale.US, "  %.1fm",
+                        f.optDouble("objects_nearest_in_band_m")));
+            }
+        } else {
+            text.append("경로 비어 있음");
+        }
+        JSONObject counts = f.optJSONObject("objects_counts");
+        int tracked = 0;
+        if (counts != null) {
+            for (java.util.Iterator<String> it = counts.keys(); it.hasNext(); ) {
+                tracked += counts.optInt(it.next());
+            }
+        }
+        if (tracked > 0) {
+            text.append(String.format(Locale.US, "  (추적 %d)", tracked));
+        }
+        return text.toString();
+    }
+
+    private int obstacleState(JSONObject f) {
+        if (f.isNull("objects_status")) {
+            return STATE_UNKNOWN;
+        }
+        if (!"OK".equals(f.optString("objects_status"))) {
+            return STATE_BAD;
+        }
+        return (!f.isNull("objects_in_band") && f.optInt("objects_in_band") > 0)
+                ? STATE_BAD : STATE_OK;
+    }
+
+    /**
+     * tip_guard's status line, said plainly. It reports OK or STALE and the
+     * forward speed it is currently letting through -- not a slope.
+     */
+    private String gateSummary(JSONObject f) {
+        if (f.isNull("tip_guard_status")) {
+            return "데이터 없음";
+        }
+        String raw = f.optString("tip_guard_status");
+        String state = raw.startsWith("STALE") ? "입력 끊김" : "통과";
+        int at = raw.indexOf("v=");
+        if (at >= 0) {
+            return state + "  ·  " + raw.substring(at + 2) + " m/s";
+        }
+        return state;
     }
 
     private static final String[] SUBSYSTEM_KEYS = {
