@@ -535,8 +535,11 @@ public class MainActivity extends AppCompatActivity {
             fg = R.color.status_disconnected_text;
         } else if (manualIdle) {
             // [주행 시작] does NOT arm the base -- the bridge refuses while the
-            // drive mode reads manual. Point at the button that actually arms it.
-            readiness = "수동 모드 — [자동 모드 전환]으로 시동을 건 뒤 주행할 수 있습니다";
+            // drive mode reads manual. Name the button that does, and it has to
+            // be the name actually printed on it: this line still said
+            // [자동 모드 전환] after that button became [시동 + 주행 시작], which
+            // sends an operator looking for a key that is not there.
+            readiness = "수동 모드 — [시동 + 주행 시작]을 누르면 주행이 시작됩니다";
             bg = R.color.status_waiting_bg;
             fg = R.color.status_waiting_text;
         } else if (blocked) {
