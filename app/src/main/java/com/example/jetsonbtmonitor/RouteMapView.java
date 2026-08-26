@@ -5,10 +5,12 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.util.AttributeSet;
+import android.view.MotionEvent;
 import android.view.View;
 
 import org.json.JSONArray;
@@ -95,6 +97,28 @@ public class RouteMapView extends View {
     /** Points are sent thinned; wp_index counts the FULL route, so divide. */
     private int stride = 1;
     private int countFull;
+
+    /**
+     * User pan/zoom/rotate, applied on top of the fit.
+     *
+     * The fit stays exactly as it was -- it is what makes the whole route
+     * visible on the dashboard card, and it recomputes as the chair moves. This
+     * is a second transform on top, so zooming never fights the fit and letting
+     * go of the controls (resetView) always returns to a known frame.
+     */
+    private boolean interactive;
+    private float userScale = 1f;
+    private float userTx, userTy;
+    private float userRotDeg;
+    private final Matrix userMatrix = new Matrix();
+    private final float[] scratch = new float[2];
+    private OnViewChanged viewListener;
+
+    /** Fingers, tracked directly: a ScaleGestureDetector and a rotation of our
+     *  own fight over the same two pointers and produce jitter at the moment
+     *  both are moving, which is most of the time. */
+    private int pointerA = -1, pointerB = -1;
+    private float lastAx, lastAy, lastBx, lastBy;
 
     private boolean hasPose;
     private float poseX, poseY, poseYawDeg;
@@ -290,6 +314,190 @@ public class RouteMapView extends View {
         return countFull;
     }
 
+    /** Told when the user moves the view, so a reset button can grey itself. */
+    public interface OnViewChanged {
+        void onViewChanged(float scale, float rotationDeg, boolean moved);
+    }
+
+    public void setOnViewChanged(OnViewChanged listener) {
+        this.viewListener = listener;
+    }
+
+    /** Only the full-screen copy takes gestures; the card is a picture. */
+    public void setInteractive(boolean on) {
+        this.interactive = on;
+        setClickable(on);
+    }
+
+    public void resetView() {
+        userScale = 1f;
+        userTx = 0f;
+        userTy = 0f;
+        userRotDeg = 0f;
+        notifyView();
+        invalidate();
+    }
+
+    public boolean isMoved() {
+        return userScale != 1f || userTx != 0f || userTy != 0f || userRotDeg != 0f;
+    }
+
+    /** Zoom about the middle of the view, for the +/- buttons. */
+    public void zoomBy(float factor) {
+        applyZoom(factor, getWidth() / 2f, (getHeight() - bottomInsetPx) / 2f);
+        invalidate();
+    }
+
+    public void rotateBy(float degrees) {
+        userRotDeg = (userRotDeg + degrees) % 360f;
+        notifyView();
+        invalidate();
+    }
+
+    private void applyZoom(float factor, float px, float py) {
+        // Clamped: below 1 the fit already shows everything and the map just
+        // shrinks into a corner, and past 12x the backdrop is single pixels.
+        float next = Math.max(1f, Math.min(12f, userScale * factor));
+        float actual = next / userScale;
+        if (actual == 1f) {
+            return;
+        }
+        // Keep the point under the fingers (or the middle) where it is.
+        //
+        // buildUserMatrix composes rotate-about-centre, then scale-about-centre,
+        // then a screen-space translate, so a screen point q maps as
+        // q = S(R(p)) + t. Solving for the t that leaves the focus f fixed
+        // under a scale of k gives t' = k*t + (f - centre)*(1 - k). Measuring
+        // the focus from the origin instead of from the centre -- the obvious
+        // form, and what this did first -- is out by centre*(1-k), which at
+        // 3.4x threw the whole map off the screen.
+        float cx = getWidth() / 2f;
+        float cy = (getHeight() - bottomInsetPx) / 2f;
+        userTx = actual * userTx + (px - cx) * (1f - actual);
+        userTy = actual * userTy + (py - cy) * (1f - actual);
+        userScale = next;
+        notifyView();
+    }
+
+    private void notifyView() {
+        if (viewListener != null) {
+            viewListener.onViewChanged(userScale, userRotDeg, isMoved());
+        }
+    }
+
+    private void buildUserMatrix() {
+        userMatrix.reset();
+        if (!interactive || !isMoved()) {
+            return;
+        }
+        float cx = getWidth() / 2f;
+        float cy = (getHeight() - bottomInsetPx) / 2f;
+        userMatrix.postRotate(userRotDeg, cx, cy);
+        userMatrix.postScale(userScale, userScale, cx, cy);
+        userMatrix.postTranslate(userTx, userTy);
+    }
+
+    /** Base screen coords for a map-frame point, then the user transform. */
+    private void toScreen(float mx, float my, float minX, float maxY,
+                          float offX, float offY, float scale) {
+        scratch[0] = offX + (mx - minX) * scale;
+        scratch[1] = offY + (maxY - my) * scale;
+        userMatrix.mapPoints(scratch);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if (!interactive) {
+            return super.onTouchEvent(event);
+        }
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_POINTER_DOWN:
+            case MotionEvent.ACTION_POINTER_UP:
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                grabPointers(event);
+                return true;
+            case MotionEvent.ACTION_MOVE:
+                handleMove(event);
+                return true;
+            default:
+                return super.onTouchEvent(event);
+        }
+    }
+
+    /** Re-latch onto whichever fingers are down after any up/down. */
+    private void grabPointers(MotionEvent event) {
+        int leaving = (event.getActionMasked() == MotionEvent.ACTION_POINTER_UP
+                || event.getActionMasked() == MotionEvent.ACTION_UP)
+                ? event.getActionIndex() : -1;
+        pointerA = pointerB = -1;
+        for (int i = 0; i < event.getPointerCount(); i++) {
+            if (i == leaving) {
+                continue;
+            }
+            if (pointerA < 0) {
+                pointerA = event.getPointerId(i);
+                lastAx = event.getX(i);
+                lastAy = event.getY(i);
+            } else if (pointerB < 0) {
+                pointerB = event.getPointerId(i);
+                lastBx = event.getX(i);
+                lastBy = event.getY(i);
+                break;
+            }
+        }
+    }
+
+    private void handleMove(MotionEvent event) {
+        int ia = pointerA < 0 ? -1 : event.findPointerIndex(pointerA);
+        int ib = pointerB < 0 ? -1 : event.findPointerIndex(pointerB);
+        if (ia < 0) {
+            return;
+        }
+        float ax = event.getX(ia), ay = event.getY(ia);
+        if (ib < 0) {
+            userTx += ax - lastAx;
+            userTy += ay - lastAy;
+            lastAx = ax;
+            lastAy = ay;
+            notifyView();
+            invalidate();
+            return;
+        }
+        float bx = event.getX(ib), by = event.getY(ib);
+
+        float oldDist = (float) Math.hypot(lastBx - lastAx, lastBy - lastAy);
+        float newDist = (float) Math.hypot(bx - ax, by - ay);
+        float focusX = (ax + bx) / 2f;
+        float focusY = (ay + by) / 2f;
+
+        // Pan by however far the midpoint moved, before zoom or rotation, so
+        // two fingers dragging together behave like one.
+        userTx += focusX - (lastAx + lastBx) / 2f;
+        userTy += focusY - (lastAy + lastBy) / 2f;
+
+        if (oldDist > 12f && newDist > 12f) {
+            applyZoom(newDist / oldDist, focusX, focusY);
+            double before = Math.atan2(lastBy - lastAy, lastBx - lastAx);
+            double after = Math.atan2(by - ay, bx - ax);
+            float delta = (float) Math.toDegrees(after - before);
+            if (delta > 180f) {
+                delta -= 360f;
+            } else if (delta < -180f) {
+                delta += 360f;
+            }
+            userRotDeg += delta;
+        }
+
+        lastAx = ax;
+        lastAy = ay;
+        lastBx = bx;
+        lastBy = by;
+        notifyView();
+        invalidate();
+    }
+
     /**
      * Which way is north. The route is drawn in the map frame, whose x axis is
      * where the chair was pointing when the map was built -- so "up" on this
@@ -298,12 +506,19 @@ public class RouteMapView extends View {
     private void drawNorth(Canvas canvas) {
         float x = getWidth() - 30f;
         float y = 34f;
+        if (userRotDeg != 0f) {
+            canvas.save();
+            canvas.rotate(-userRotDeg, x, y);
+        }
         northPaint.setStyle(Paint.Style.STROKE);
         canvas.drawLine(x, y + 16f, x, y - 10f, northPaint);
         canvas.drawLine(x, y - 10f, x - 6f, y - 2f, northPaint);
         canvas.drawLine(x, y - 10f, x + 6f, y - 2f, northPaint);
         northPaint.setStyle(Paint.Style.FILL);
         canvas.drawText("N", x, y + 36f, northPaint);
+        if (userRotDeg != 0f) {
+            canvas.restore();
+        }
     }
 
     @Override
@@ -359,6 +574,20 @@ public class RouteMapView extends View {
         // ROS x-forward/y-left -> screen x-right/y-down.
         // sx/sy are computed inline below from these.
         int done = Math.max(0, Math.min(progressIndex, routeX.length - 1));
+
+        buildUserMatrix();
+        // Geometry goes under the user transform; text and the chair marker do
+        // not, further down. Stroke widths are divided by the zoom so a route
+        // line stays a route line at 8x instead of becoming a blue field.
+        canvas.save();
+        canvas.concat(userMatrix);
+        float widthDiv = Math.max(0.0001f, userScale);
+        float routeW = routePaint.getStrokeWidth();
+        float doneW = donePaint.getStrokeWidth();
+        float bandW = bandEdge.getStrokeWidth();
+        routePaint.setStrokeWidth(routeW / widthDiv);
+        donePaint.setStrokeWidth(doneW / widthDiv);
+        bandEdge.setStrokeWidth(bandW / widthDiv);
 
         // Campus first of all: buildings, tree lines and road edges, so someone
         // who has never been to this campus can tell what they are looking at.
@@ -423,15 +652,24 @@ public class RouteMapView extends View {
 
         // Endpoints, so the direction of travel is readable at a glance.
         canvas.drawCircle(offX + (routeX[0] - minX) * scale,
-                offY + (maxY - routeY[0]) * scale, 7f, dotPaint);
+                offY + (maxY - routeY[0]) * scale, 7f / widthDiv, dotPaint);
         int last = routeX.length - 1;
         canvas.drawCircle(offX + (routeX[last] - minX) * scale,
-                offY + (maxY - routeY[last]) * scale, 7f, dotPaint);
+                offY + (maxY - routeY[last]) * scale, 7f / widthDiv, dotPaint);
 
+        routePaint.setStrokeWidth(routeW);
+        donePaint.setStrokeWidth(doneW);
+        bandEdge.setStrokeWidth(bandW);
+        canvas.restore();
+
+        // Names stay upright and stay the size they were. A label that rotates
+        // with the map ends up upside down, and one that scales with it either
+        // vanishes or swallows the map.
         for (Landmark mark : LANDMARKS) {
-            float lx = offX + (mark.x - minX) * scale;
-            float ly = offY + (maxY - mark.y) * scale;
-            if (ly < 0 || ly > getHeight()) {
+            toScreen(mark.x, mark.y, minX, maxY, offX, offY, scale);
+            float lx = scratch[0];
+            float ly = scratch[1];
+            if (ly < 0 || ly > getHeight() || lx < -getWidth() || lx > 2 * getWidth()) {
                 continue;               // off screen at this zoom
             }
             // The anchor is inside the view but the text is centred on it, so a
@@ -444,11 +682,18 @@ public class RouteMapView extends View {
             canvas.drawText(mark.name, tx, ly, labelPaint);
         }
 
+        // Before the pose check, not after it. drawNorth used to sit at the
+        // very end of this method, past an early return, so the one time the
+        // view most needs to say which way it is pointing -- no fix yet, or a
+        // rotated map -- was the one time it did not.
+        drawNorth(canvas);
+
         if (!hasPose) {
             return;
         }
-        float cx = offX + (poseX - minX) * scale;
-        float cy = offY + (maxY - poseY) * scale;
+        toScreen(poseX, poseY, minX, maxY, offX, offY, scale);
+        float cx = scratch[0];
+        float cy = scratch[1];
         chairPaint.setColor(poseStale ? Color.parseColor("#98A2B3")
                                       : Color.parseColor("#12805C"));
         chairPaint.setStyle(Paint.Style.FILL);
@@ -462,7 +707,9 @@ public class RouteMapView extends View {
         // Smaller than before and sitting just clear of the dot, but with a
         // sharper point: what makes a heading readable is the angle at the tip,
         // not the length of the thing.
-        double rad = Math.toRadians(poseYawDeg);
+        // The marker is drawn in screen space so it keeps its size, which
+        // means the map's rotation has to be added to the heading by hand.
+        double rad = Math.toRadians(poseYawDeg - userRotDeg);
         float baseX = cx + (float) (Math.cos(rad) * 15.0);
         float baseY = cy - (float) (Math.sin(rad) * 15.0);
         float tipX = cx + (float) (Math.cos(rad) * 36.0);
@@ -479,7 +726,5 @@ public class RouteMapView extends View {
         arrow.close();
         canvas.drawPath(arrow, haloPaint);
         canvas.drawPath(arrow, chairPaint);
-
-        drawNorth(canvas);
     }
 }

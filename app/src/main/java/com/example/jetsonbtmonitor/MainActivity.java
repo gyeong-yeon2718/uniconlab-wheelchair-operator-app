@@ -103,6 +103,18 @@ public class MainActivity extends AppCompatActivity {
     private MaterialButton jobCancelButton;
     private RouteMapView routeMapView;
     private TextView navStatusText;
+    /**
+     * The route frame arrives once per connection, so the full-screen map
+     * cannot ask for it when it opens. Kept here and replayed into the copy.
+     */
+    private JSONArray routePoints;
+    private JSONArray bandLeft;
+    private JSONArray bandRight;
+    private int routeStride = 1;
+    private int routeCountFull;
+    /** Non-null only while the full-screen map is up, and fed the same frames. */
+    private RouteMapView fullMapView;
+    private android.app.Dialog mapDialog;
     private View tripBlock;
     private TextView tripDistanceText;
     private TextView tripEtaText;
@@ -267,11 +279,20 @@ public class MainActivity extends AppCompatActivity {
                         JSONObject frame = new JSONObject(line);
                         String type = frame.optString("type");
                         if ("route".equals(type)) {
-                            routeMapView.setBand(frame.optJSONArray("band_left"),
-                                    frame.optJSONArray("band_right"));
-                            routeMapView.setRoute(frame.optJSONArray("points"),
-                                    frame.optInt("stride", 1),
-                                    frame.optInt("count_full", frame.optInt("count")));
+                            bandLeft = frame.optJSONArray("band_left");
+                            bandRight = frame.optJSONArray("band_right");
+                            routePoints = frame.optJSONArray("points");
+                            routeStride = frame.optInt("stride", 1);
+                            routeCountFull =
+                                    frame.optInt("count_full", frame.optInt("count"));
+                            routeMapView.setBand(bandLeft, bandRight);
+                            routeMapView.setRoute(routePoints, routeStride,
+                                    routeCountFull);
+                            if (fullMapView != null) {
+                                fullMapView.setBand(bandLeft, bandRight);
+                                fullMapView.setRoute(routePoints, routeStride,
+                                        routeCountFull);
+                            }
                             int full = frame.optInt("count_full", frame.optInt("count"));
                             int sent = frame.optInt("count");
                             showStatus(full == sent
@@ -391,6 +412,7 @@ public class MainActivity extends AppCompatActivity {
         stackStopButton = findViewById(R.id.stackStopButton);
         jobCancelButton = findViewById(R.id.jobCancelButton);
         routeMapView = findViewById(R.id.routeMapView);
+        routeMapView.setOnClickListener(view -> showFullMap());
         // Matches the speed readout's height plus its margin, so the fitted
         // route never runs underneath it.
         routeMapView.setBottomInset(
@@ -1205,6 +1227,9 @@ public class MainActivity extends AppCompatActivity {
         // A pose older than a second is not where the chair is now.
         boolean stale = f.isNull("pose_age_s") || f.optDouble("pose_age_s", 99) > 1.0;
         routeMapView.setPose(px, py, yaw, stale);
+        if (fullMapView != null) {
+            fullMapView.setPose(px, py, yaw, stale);
+        }
 
         // wp_index counts the follower's route; the drawn line is whatever route
         // the bridge resolved. When the two differ in length they are not the
@@ -1214,6 +1239,10 @@ public class MainActivity extends AppCompatActivity {
         int countFull = routeMapView.getCountFull();
         int wpTotal = f.isNull("wp_total") ? 0 : f.optInt("wp_total");
         boolean routeMismatch = countFull > 0 && wpTotal > 0 && countFull != wpTotal;
+        if (fullMapView != null) {
+            fullMapView.setProgress(
+                    (routeMismatch || f.isNull("wp_index")) ? -1 : f.optInt("wp_index"));
+        }
         routeMapView.setProgress(
                 (routeMismatch || f.isNull("wp_index")) ? -1 : f.optInt("wp_index"));
 
@@ -1255,6 +1284,57 @@ public class MainActivity extends AppCompatActivity {
         navStatusText.setTextColor(ContextCompat.getColor(this,
                 (px == null || stale || routeMismatch)
                         ? R.color.status_disconnected_text : R.color.text_secondary));
+    }
+
+    /**
+     * The map, full screen and under the operator's fingers.
+     *
+     * The card version stays fitted to the whole route -- that is the right
+     * default for a glance, and it is also why it cannot answer "which side of
+     * the path is the chair on". This is the same view with gestures switched
+     * on, fed the same telemetry, so the chair keeps moving while it is open.
+     */
+    private void showFullMap() {
+        if (mapDialog != null && mapDialog.isShowing()) {
+            return;
+        }
+        View content = getLayoutInflater().inflate(R.layout.dialog_map, null);
+        RouteMapView map = content.findViewById(R.id.mapFullView);
+        TextView zoomText = content.findViewById(R.id.mapZoomText);
+        map.setInteractive(true);
+        // Replay what the card already has; the route frame will not come again.
+        if (routePoints != null) {
+            map.setBand(bandLeft, bandRight);
+            map.setRoute(routePoints, routeStride, routeCountFull);
+        }
+        map.setOnViewChanged((scale, rotation, moved) -> zoomText.setText(
+                moved ? String.format(Locale.US, "%s   ·   %.1f\u00d7   %.0f\u00b0",
+                        getString(R.string.map_title), scale, rotation)
+                      : getString(R.string.map_title)));
+
+        content.findViewById(R.id.mapZoomInButton)
+                .setOnClickListener(v -> map.zoomBy(1.5f));
+        content.findViewById(R.id.mapZoomOutButton)
+                .setOnClickListener(v -> map.zoomBy(1f / 1.5f));
+        content.findViewById(R.id.mapRotateButton)
+                .setOnClickListener(v -> map.rotateBy(45f));
+        content.findViewById(R.id.mapResetButton)
+                .setOnClickListener(v -> map.resetView());
+
+        android.app.Dialog dialog = new android.app.Dialog(
+                this, android.R.style.Theme_Material_Light_NoActionBar);
+        dialog.setContentView(content);
+        content.findViewById(R.id.mapCloseButton)
+                .setOnClickListener(v -> dialog.dismiss());
+        // Stop feeding a view that is being torn down, and drop the reference
+        // so a rotation or a back press does not leak the whole dialog.
+        dialog.setOnDismissListener(d -> {
+            fullMapView = null;
+            mapDialog = null;
+        });
+        fullMapView = map;
+        mapDialog = dialog;
+        dialog.show();
     }
 
     /**
