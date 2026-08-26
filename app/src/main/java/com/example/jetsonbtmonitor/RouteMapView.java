@@ -39,6 +39,27 @@ public class RouteMapView extends View {
      * control points or eyeballed fit are involved. Keep them in step with
      * campus_backdrop.json if the image is ever re-rendered.
      */
+    /**
+     * Where true north is, as a heading in the map frame.
+     *
+     * There is no georeference anywhere in this stack to derive it from: the
+     * map frame is built from the lidar cloud, its x axis is simply wherever
+     * the chair was pointing when the map was made, and neither
+     * campus_backdrop.json nor the route files carry a datum, a UTM zone or a
+     * latitude. So this is measured, once, by standing the chair somewhere and
+     * saying which way it faces.
+     *
+     * Taken 2026-08-26: the chair read yaw +11.3 deg (quaternion z=0.09827,
+     * w=0.99445 off /fast_lio_icp/pose) while facing south, so north is
+     * 11.3 + 180. Only a half turn is involved, so this does not depend on
+     * which way bearings are counted -- but it is an eyeballed "that is south",
+     * so treat it as good to something like +/-15 deg, not to the decimal.
+     *
+     * Re-measure the same way if the map is ever rebuilt: the x axis moves
+     * with it and this number goes stale silently.
+     */
+    private static final float MAP_YAW_OF_NORTH_DEG = 191.3f;
+
     private static final float BACKDROP_ORIGIN_X = -47.827f;
     private static final float BACKDROP_ORIGIN_Y = -129.21f;
     private static final float BACKDROP_RES_M = 0.25f;
@@ -187,10 +208,11 @@ public class RouteMapView extends View {
         labelHalo.setStyle(Paint.Style.STROKE);
         labelHalo.setStrokeWidth(9f);
 
-        northPaint.setColor(Color.parseColor("#98A2B3"));
-        northPaint.setTextSize(24f);
+        northPaint.setColor(Color.parseColor("#D92D20"));
+        northPaint.setTextSize(30f);
         northPaint.setTextAlign(Paint.Align.CENTER);
         northPaint.setStrokeWidth(3f);
+        northPaint.setFakeBoldText(true);
 
         try {
             BitmapFactory.Options options = new BitmapFactory.Options();
@@ -503,22 +525,68 @@ public class RouteMapView extends View {
      * where the chair was pointing when the map was built -- so "up" on this
      * view is not north and there was nothing on screen saying so.
      */
+    /**
+     * Which way is north, drawn as a needle that actually points at it.
+     *
+     * The old one was an up-arrow labelled N, and up on this view is not north
+     * -- its own comment said so. It pointed at the top of the screen whatever
+     * the map was doing, which is a decoration, not a compass.
+     */
     private void drawNorth(Canvas canvas) {
-        float x = getWidth() - 30f;
-        float y = 34f;
-        if (userRotDeg != 0f) {
-            canvas.save();
-            canvas.rotate(-userRotDeg, x, y);
-        }
-        northPaint.setStyle(Paint.Style.STROKE);
-        canvas.drawLine(x, y + 16f, x, y - 10f, northPaint);
-        canvas.drawLine(x, y - 10f, x - 6f, y - 2f, northPaint);
-        canvas.drawLine(x, y - 10f, x + 6f, y - 2f, northPaint);
+        // Big on the map you opened to read; modest on the dashboard card,
+        // where the view is a few hundred pixels tall and a full-size dial
+        // lands on top of the landmark names.
+        float radius = interactive
+                ? Math.max(46f, Math.min(70f,
+                        Math.min(getWidth(), getHeight()) * 0.11f))
+                : 30f;
+        // Bottom right, not top right. The fit puts the far end of the route
+        // in the top corners, so a dial there lands on 공업센터본관's label on
+        // the card. The speed readout takes the bottom LEFT, and bottomInsetPx
+        // is already reserved for it, so this corner is the one free of both.
+        float cx = getWidth() - radius - 26f;
+        float cy = getHeight() - bottomInsetPx - radius - 20f;
+        northPaint.setTextSize(radius * 0.75f);
+        northPaint.setStrokeWidth(radius * 0.09f);
+
+        // A disc behind it, or the needle disappears into the point cloud.
         northPaint.setStyle(Paint.Style.FILL);
-        canvas.drawText("N", x, y + 36f, northPaint);
-        if (userRotDeg != 0f) {
-            canvas.restore();
-        }
+        northPaint.setColor(Color.parseColor("#F2FFFFFF"));
+        canvas.drawCircle(cx, cy, radius, northPaint);
+        northPaint.setStyle(Paint.Style.STROKE);
+        northPaint.setColor(Color.parseColor("#E4D9DA"));
+        northPaint.setStrokeWidth(2f);
+        canvas.drawCircle(cx, cy, radius, northPaint);
+
+        // Same convention as the heading arrow: map yaw drawn as
+        // (cos, -sin), with the view's own rotation taken off first.
+        double rad = Math.toRadians(MAP_YAW_OF_NORTH_DEG - userRotDeg);
+        float dx = (float) Math.cos(rad);
+        float dy = -(float) Math.sin(rad);
+        float tipX = cx + dx * (radius - 6f);
+        float tipY = cy + dy * (radius - 6f);
+        float tailX = cx - dx * (radius * 0.62f);
+        float tailY = cy - dy * (radius * 0.62f);
+
+        // Grey tail, red head: which end is north has to be readable without
+        // finding the letter first.
+        northPaint.setColor(Color.parseColor("#B9C6D4"));
+        northPaint.setStrokeWidth(radius * 0.16f);
+        canvas.drawLine(cx, cy, tailX, tailY, northPaint);
+
+        northPaint.setStyle(Paint.Style.FILL);
+        northPaint.setColor(Color.parseColor("#D92D20"));
+        float halfWidth = radius * 0.27f;
+        arrow.reset();
+        arrow.moveTo(tipX, tipY);
+        arrow.lineTo(cx - dy * halfWidth, cy + dx * halfWidth);
+        arrow.lineTo(cx + dy * halfWidth, cy - dx * halfWidth);
+        arrow.close();
+        canvas.drawPath(arrow, northPaint);
+
+        // The letter rides just outside the tip, upright.
+        canvas.drawText("N", cx + dx * (radius + radius * 0.42f),
+                cy + dy * (radius + radius * 0.42f) + radius * 0.26f, northPaint);
     }
 
     @Override

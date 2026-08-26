@@ -1,26 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The same monogram as the launcher icon, sized for the app bar. -->
+<!-- The same UNICON mark, sized for the app bar. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="26dp"
-    android:height="26dp"
+    android:width="28dp"
+    android:height="28dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:pathData="M8,8h92v92h-92z"
-        android:fillColor="#0B4F83" />
-    <path
-        android:pathData="M22,78 C38,78 42,44 58,44 C70,44 76,53 84,53"
-        android:fillColor="#00000000"
-        android:strokeColor="#5FC9F3"
-        android:strokeWidth="7"
+        android:pathData="M24,56 L56,24"
+        android:strokeColor="#17479E"
+        android:strokeWidth="12"
         android:strokeLineCap="round" />
     <path
-        android:pathData="M33,26h10v52h-10z"
-        android:fillColor="#FFFFFF" />
+        android:pathData="M24,78 L72,30"
+        android:strokeColor="#17479E"
+        android:strokeWidth="12"
+        android:strokeLineCap="round" />
     <path
-        android:pathData="M65,26h10v52h-10z"
-        android:fillColor="#FFFFFF" />
+        android:pathData="M48,84 L70,62"
+        android:strokeColor="#17479E"
+        android:strokeWidth="12"
+        android:strokeLineCap="round" />
     <path
-        android:pathData="M43,47h22v10h-22z"
-        android:fillColor="#FFFFFF" />
+        android:pathData="M86,48m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0"
+        android:fillColor="#F5A02A" />
 </vector>

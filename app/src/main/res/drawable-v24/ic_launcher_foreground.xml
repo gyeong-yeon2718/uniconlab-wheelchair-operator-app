@@ -1,33 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- An H monogram with the route arc running through its crossbar.
-     Original mark, drawn for this app - NOT the university's official
-     logo. Drop the real asset in here if one is cleared for use.
-     Everything sits inside the 72dp adaptive-icon safe zone (18..90). -->
+<!--
+  UNICON lab mark: the three rising strokes and the orange dot.
+
+  Redrawn as a vector rather than embedded as a bitmap, so it stays crisp from
+  the 48dp launcher tile up to the settings header, and so the adaptive icon's
+  monochrome layer has a shape to work with. The wordmark is deliberately not
+  here - "Unmanned & Intelligent systems CONtrol LAB" is unreadable at icon
+  size, and a symbol is what a launcher tile is for.
+
+  Everything sits inside the 72dp adaptive-icon safe zone (18..90 of 108).
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Route arc, drawn under the monogram. -->
+    <!-- Upper stroke. -->
     <path
-        android:pathData="M24,76 C40,76 44,40 60,40 C72,40 78,50 86,50"
-        android:fillColor="#00000000"
-        android:strokeColor="#5FC9F3"
-        android:strokeWidth="6"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
-    <!-- Where the chair is on it. -->
+        android:pathData="M28,58 L58,28"
+        android:strokeColor="#17479E"
+        android:strokeWidth="11"
+        android:strokeLineCap="round" />
+    <!-- Middle stroke, the long one. -->
     <path
-        android:pathData="M86,50m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0"
-        android:fillColor="#5FC9F3" />
-    <!-- H -->
+        android:pathData="M28,76 L72,32"
+        android:strokeColor="#17479E"
+        android:strokeWidth="11"
+        android:strokeLineCap="round" />
+    <!-- Lower stroke, short, stepping out to the right. -->
     <path
-        android:pathData="M33,30h9v48h-9z"
-        android:fillColor="#FFFFFF" />
+        android:pathData="M50,80 L70,60"
+        android:strokeColor="#17479E"
+        android:strokeWidth="11"
+        android:strokeLineCap="round" />
+    <!-- The dot. -->
     <path
-        android:pathData="M66,30h9v48h-9z"
-        android:fillColor="#FFFFFF" />
-    <path
-        android:pathData="M42,49h24v10h-24z"
-        android:fillColor="#FFFFFF" />
+        android:pathData="M82,50m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0"
+        android:fillColor="#F5A02A" />
 </vector>
