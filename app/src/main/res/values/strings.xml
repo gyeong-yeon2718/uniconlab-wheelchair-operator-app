@@ -162,7 +162,7 @@
     <string name="blackbox_unknown">기록 상태 모름</string>
     <string name="drive_manual_joystick">수동 주행 중 (조종간)</string>
     <string name="trip_remaining">남은 거리</string>
-    <string name="trip_eta">예상 소요 시간</string>
+    <string name="trip_eta">예상 주행 시간</string>
     <string name="map_title">주행 경로 지도</string>
     <string name="map_hint">두 손가락으로 확대·회전, 한 손가락으로 이동합니다.</string>
     <string name="map_zoom_in">＋</string>

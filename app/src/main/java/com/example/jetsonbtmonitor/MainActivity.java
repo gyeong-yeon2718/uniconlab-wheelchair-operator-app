@@ -285,6 +285,9 @@ public class MainActivity extends AppCompatActivity {
                             routeStride = frame.optInt("stride", 1);
                             routeCountFull =
                                     frame.optInt("count_full", frame.optInt("count"));
+                            // A new route is a new run; last run's pace is
+                            // not evidence about this one.
+                            etaPaceMps = Double.NaN;
                             routeMapView.setBand(bandLeft, bandRight);
                             routeMapView.setRoute(routePoints, routeStride,
                                     routeCountFull);
@@ -980,6 +983,30 @@ public class MainActivity extends AppCompatActivity {
     /** Above this the chair is moving, whatever any status string claims. */
     private static final double MOVING_MPS = 0.05;
 
+    /**
+     * The pace the ETA divides by, in m/s.
+     *
+     * Not the instantaneous speed. This chair does not really choose its
+     * speed -- waypoint_follower caps it at MAX_SPEED 0.8, drops to
+     * SLOPE_SPEED 0.3 on a grade and CREEP_SPEED 0.15 in a pinch -- so what
+     * varies most is not the pace but whether it is moving at all. Dividing a
+     * few hundred metres by the speed of a chair that is currently held behind
+     * a pedestrian gives an hour and a half, and it snaps back the moment the
+     * pedestrian steps aside. That is not an estimate, it is a division by
+     * something close to zero, and it made the figure unreadable exactly when
+     * someone was watching it.
+     *
+     * So: average the speed over the samples where the chair was actually
+     * travelling, and carry that average through the holds. Rough numbers at
+     * 2 Hz -- alpha 0.05 is a time constant of about forty seconds, long
+     * enough that one slow corner does not move it and short enough to follow
+     * a genuinely slower stretch.
+     */
+    private static final double ETA_MIN_PACE_MPS = 0.15;   // = CREEP_SPEED
+    private static final double ETA_DEFAULT_PACE_MPS = 0.8; // = MAX_SPEED
+    private static final double ETA_ALPHA = 0.05;
+    private double etaPaceMps = Double.NaN;
+
     /** The follower's own words for "the wheels are turning". */
     private static boolean isDrivingState(String state) {
         return "DRIVING".equals(state) || "BYPASS".equals(state)
@@ -1365,12 +1392,18 @@ public class MainActivity extends AppCompatActivity {
         tripDistanceText.setText(
                 left >= 0f ? formatDistance(left) : getString(R.string.empty_value));
 
-        // Only when the chair is actually moving. Dividing by a speed of zero,
-        // or by the speed it happened to hold before a hold, invents a number.
-        boolean moving = !f.isNull("speed_mps") && f.optDouble("speed_mps") > MOVING_MPS;
-        tripEtaText.setText(left >= 0f && moving
-                ? formatEta(left / f.optDouble("speed_mps"))
-                : getString(R.string.empty_value));
+        // Learn the pace only from samples where it was travelling, so a hold
+        // leaves the estimate where it was instead of sending it to an hour.
+        if (!f.isNull("speed_mps")) {
+            double now = f.optDouble("speed_mps");
+            if (now > ETA_MIN_PACE_MPS) {
+                etaPaceMps = Double.isNaN(etaPaceMps) ? now
+                        : etaPaceMps + ETA_ALPHA * (now - etaPaceMps);
+            }
+        }
+        double pace = Double.isNaN(etaPaceMps) ? ETA_DEFAULT_PACE_MPS : etaPaceMps;
+        tripEtaText.setText(left >= 0f
+                ? formatEta(left / pace) : getString(R.string.empty_value));
     }
 
     /** Bring-up script progress. The bridge relays the script's own last log line. */

@@ -1,40 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  UNICON lab mark: the three rising strokes and the orange dot.
-
-  Redrawn as a vector rather than embedded as a bitmap, so it stays crisp from
-  the 48dp launcher tile up to the settings header, and so the adaptive icon's
-  monochrome layer has a shape to work with. The wordmark is deliberately not
-  here - "Unmanned & Intelligent systems CONtrol LAB" is unreadable at icon
-  size, and a symbol is what a launcher tile is for.
-
-  Everything sits inside the 72dp adaptive-icon safe zone (18..90 of 108).
+  UNICON lab mark, taken from the lab's own SVG rather than redrawn.
+  Only the symbol: the wordmark is unreadable at launcher size.
+  Spans 66 of the 108 viewport, inside the adaptive-icon safe zone.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Upper stroke. -->
-    <path
-        android:pathData="M28,58 L58,28"
-        android:strokeColor="#17479E"
-        android:strokeWidth="11"
-        android:strokeLineCap="round" />
-    <!-- Middle stroke, the long one. -->
-    <path
-        android:pathData="M28,76 L72,32"
-        android:strokeColor="#17479E"
-        android:strokeWidth="11"
-        android:strokeLineCap="round" />
-    <!-- Lower stroke, short, stepping out to the right. -->
-    <path
-        android:pathData="M50,80 L70,60"
-        android:strokeColor="#17479E"
-        android:strokeWidth="11"
-        android:strokeLineCap="round" />
-    <!-- The dot. -->
-    <path
-        android:pathData="M82,50m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0"
-        android:fillColor="#F5A02A" />
+    <group android:scaleX="0.012519" android:scaleY="-0.012519"
+        android:translateX="13.8768" android:translateY="108.3318">
+        <path android:fillColor="#17479E"
+            android:pathData="M3785 6076 c-38 -12 -101 -38 -140 -57 -87 -42 -88 -43 -1311 -1261 -864 -861 -944 -938 -974 -938 -28 0 -47 14 -128 93 -92 91 -95 95 -100 147 l-5 53 369 364 c1074 1061 1083 1071 1100 1130 13 45 14 63 4 103 -36 149 -167 239 -307 210 l-57 -12 -601 -593 c-330 -326 -659 -653 -730 -726 -135 -138 -175 -197 -215 -315 -121 -352 80 -753 442 -881 59 -21 97 -27 195 -31 140 -5 206 10 349 78 78 38 91 49 494 457 622 627 1732 1728 1758 1742 12 6 28 8 36 4 8 -4 59 -51 115 -104 99 -94 101 -97 101 -141 l0 -45 -902 -899 c-497 -495 -1019 -1014 -1160 -1154 -249 -248 -257 -257 -273 -314 -60 -208 155 -406 333 -308 17 9 393 377 834 817 442 440 964 958 1160 1151 346 342 357 354 397 435 57 117 75 193 74 319 -1 275 -140 498 -393 630 -98 51 -181 70 -300 69 -71 0 -113 -6 -165 -23z" />
+        <path android:fillColor="#17479E"
+            android:pathData="M4485 4344 c-84 -21 -91 -27 -547 -482 -412 -410 -460 -462 -474 -506 -20 -58 -15 -146 11 -196 22 -43 95 -113 141 -135 47 -22 126 -21 170 2 18 10 247 231 508 491 455 454 475 475 486 523 34 141 -75 288 -225 303 -28 2 -59 2 -70 0z" />
+    </group>
+    <path android:fillColor="#F5A02A"
+        android:pathData="M81.05,45.19m-5.95,0a5.95,5.95 0,1 1,11.90 0a5.95,5.95 0,1 1,-11.90 0" />
 </vector>
