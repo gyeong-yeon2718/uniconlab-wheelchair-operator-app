@@ -39,4 +39,22 @@
     <color name="control_disabled_fill">#DDE3EA</color>
     <color name="control_disabled_text">#98A2B3</color>
     <color name="control_disabled_stroke">#DDE3EA</color>
+    <!-- Drive activity. The dashboard could say "주행 준비 완료" and
+         "DRIVING wp=921/1917" at the same time and never once say, in
+         words, that the chair was moving right now. These are for the one
+         line that does. -->
+    <color name="drive_live_bg">#0B7A4B</color>
+    <color name="drive_live_fill">#0E9460</color>
+    <color name="drive_hold_bg">#FFF4D6</color>
+    <color name="drive_hold_text">#7A4E00</color>
+    <color name="drive_idle_bg">#EEF2F7</color>
+    <color name="drive_idle_text">#54657A</color>
+    <color name="drive_alarm_bg">#FDE7E4</color>
+    <color name="drive_alarm_text">#A5231A</color>
+    <color name="stop_fill">#C0392F</color>
+    <color name="stop_fill_pressed">#96271F</color>
+    <!-- Softer separators and a warmer card edge than the flat #D4E2EF,
+         which showed up as a hard blue box around every card. -->
+    <color name="hairline">#E6EDF5</color>
+    <color name="accent_cyan">#5FC9F3</color>
 </resources>

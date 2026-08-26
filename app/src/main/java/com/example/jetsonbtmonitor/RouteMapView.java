@@ -262,6 +262,30 @@ public class RouteMapView extends View {
         return stride;
     }
 
+    /**
+     * Metres still to drive, measured along the route from a waypoint index.
+     *
+     * The route arrives thinned (every {@code stride}-th point), so this walks
+     * the drawn polyline and slightly under-measures the curves. On a route
+     * whose points are ~0.1 m apart that is well inside the error of dividing
+     * by a speed that is itself changing, and the alternative is asking the
+     * bridge to ship 1917 points the map does not need.
+     *
+     * @return metres, or -1 when there is no route or no position on it.
+     */
+    public float remainingMetres(int fullIndex) {
+        if (routeX.length < 2 || fullIndex < 0) {
+            return -1f;
+        }
+        int from = Math.max(0, Math.min(routeX.length - 1, fullIndex / stride));
+        double total = 0.0;
+        for (int i = from; i < routeX.length - 1; i++) {
+            total += Math.hypot(routeX[i + 1] - routeX[i],
+                    routeY[i + 1] - routeY[i]);
+        }
+        return (float) total;
+    }
+
     public int getCountFull() {
         return countFull;
     }

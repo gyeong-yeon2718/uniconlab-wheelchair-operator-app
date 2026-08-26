@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The stop button goes solid red only while the chair is actually
+     driving; the rest of the time it is an ordinary outlined button and
+     must not compete with E-STOP for attention. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/control_disabled_fill" android:state_enabled="false" />
+    <item android:color="@color/stop_fill" />
+</selector>

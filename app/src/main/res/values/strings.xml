@@ -134,4 +134,33 @@
     <string name="stack_stop">스택 내리기</string>
     <string name="job_cancel">기동 중단</string>
     <string name="nav_label">주행 경로 및 위치</string>
+    <!-- Drive activity line. -->
+    <string name="drive_state_label">주행 상태</string>
+    <string name="drive_live">주행 중</string>
+    <string name="drive_live_bypass">주행 중 · 장애물 우회</string>
+    <string name="drive_live_recover">주행 중 · 경로 복귀</string>
+    <string name="drive_hold">주행 보류</string>
+    <string name="drive_idle">정지</string>
+    <string name="drive_unknown">확인 불가</string>
+    <string name="drive_stop_now">주행 정지</string>
+    <string name="gate_hint">속도 게이트는 명령을 바퀴로 넘기기 직전 단계입니다. 가속을 0.30 m/s²로 제한하고, 상위 명령이 0.6초 끊기면 스스로 정지합니다. 정지 요청은 지연 없이 그대로 통과시킵니다.</string>
+    <string name="drive_idle_manual">정지 · 수동 대기</string>
+    <string name="tilt_explain_title">차체 기울기란</string>
+    <string name="tilt_pitch_caption">피치 (pitch)
+앞뒤 기울기
+오르막 +, 내리막 −</string>
+    <string name="tilt_roll_caption">롤 (roll)
+좌우 기울기
+옆으로 넘어질 위험</string>
+    <string name="tilt_explain_body">둘 다 측위가 추정한 차체 자세입니다. 평지에서는 둘 다 0° 근처에서 움직입니다.
+
+피치가 크면 팔로워가 경사로로 보고 속도를 줄입니다. 롤은 옆으로 넘어질 위험과 직결되므로, 주행 중 계속 커지면 경로를 의심해야 합니다.</string>
+    <string name="tilt_tap_hint">차체 기울기 행을 누르면 피치·롤 설명이 나옵니다.</string>
+    <string name="close">닫기</string>
+    <string name="blackbox_on">기록 중</string>
+    <string name="blackbox_off">기록 안 함</string>
+    <string name="blackbox_unknown">기록 상태 모름</string>
+    <string name="drive_manual_joystick">수동 주행 중 (조종간)</string>
+    <string name="trip_remaining">남은 거리</string>
+    <string name="trip_eta">예상 소요 시간</string>
 </resources>

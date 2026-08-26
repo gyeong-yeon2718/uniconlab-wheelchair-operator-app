@@ -11,6 +11,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -87,12 +88,26 @@ public class MainActivity extends AppCompatActivity {
     private TextView readinessText;
     private LinearLayout subsystemGrid;
     private TextView followerStatusText;
+    private TextView driveStateText;
+    /** driveStopButton's own tint, so the filled state can be undone.
+     *  Passing null to setBackgroundTintList does not restore an
+     *  outlined MaterialButton -- it drops to a solid black box. */
+    private android.content.res.ColorStateList driveStopTint;
+    /** Whether the base is resting in manual, which changes what
+     *  the start button in the drive card has to send. */
+    private boolean manualIdleNow;
+    private TextView driveDetailText;
     private TextView jobStatusText;
     private MaterialButton stackStartButton;
     private MaterialButton stackStopButton;
     private MaterialButton jobCancelButton;
     private RouteMapView routeMapView;
     private TextView navStatusText;
+    private View tripBlock;
+    private TextView tripDistanceText;
+    private TextView tripEtaText;
+    private TextView tripProgressText;
+    private android.widget.ProgressBar tripProgressBar;
     private TextView estopHintText;
     private boolean sawProtocolFrame;
     private int foreignLineCount;
@@ -365,9 +380,12 @@ public class MainActivity extends AppCompatActivity {
         estopHintText = findViewById(R.id.estopHintText);
         driveStartButton = findViewById(R.id.driveStartButton);
         driveStopButton = findViewById(R.id.driveStopButton);
+        driveStopTint = driveStopButton.getBackgroundTintList();
         readinessText = findViewById(R.id.readinessText);
         subsystemGrid = findViewById(R.id.subsystemGrid);
         followerStatusText = findViewById(R.id.followerStatusText);
+        driveStateText = findViewById(R.id.driveStateText);
+        driveDetailText = findViewById(R.id.driveDetailText);
         jobStatusText = findViewById(R.id.jobStatusText);
         stackStartButton = findViewById(R.id.stackStartButton);
         stackStopButton = findViewById(R.id.stackStopButton);
@@ -378,6 +396,11 @@ public class MainActivity extends AppCompatActivity {
         routeMapView.setBottomInset(
                 getResources().getDisplayMetrics().density * 44f);
         navStatusText = findViewById(R.id.navStatusText);
+        tripBlock = findViewById(R.id.tripBlock);
+        tripDistanceText = findViewById(R.id.tripDistanceText);
+        tripEtaText = findViewById(R.id.tripEtaText);
+        tripProgressText = findViewById(R.id.tripProgressText);
+        tripProgressBar = findViewById(R.id.tripProgressBar);
     }
 
     private void setupActions() {
@@ -426,10 +449,29 @@ public class MainActivity extends AppCompatActivity {
                           + "휠체어가 즉시 움직입니다. 조종간 조작은 무시됩니다.",
                 () -> sendBridgeCommand("arm_and_drive", true,
                         "시동 + 주행을 요청했습니다.")));
-        driveStartButton.setOnClickListener(view -> confirmThen(
-                "주행 시작",
-                "휠체어가 즉시 움직이기 시작합니다. 계속할까요?",
-                () -> sendBridgeCommand("drive_start", true, "주행 시작을 요청했습니다.")));
+        // One button, whichever start the chair is actually able to accept.
+        // Splitting them left a dead end: resting in manual after bring-up is
+        // the normal state, and there this button was greyed out while the
+        // only control that would work sat in the E-STOP card above, under a
+        // name that does not appear anywhere in the drive card. drive_start
+        // cannot arm the base -- the bridge refuses it on any manual reading --
+        // so in manual this sends arm_and_drive, the same command that button
+        // sends.
+        driveStartButton.setOnClickListener(view -> {
+            if (manualIdleNow) {
+                confirmThen("시동 + 주행",
+                        "자동 모드로 전환하고 곳바로 주행을 시작합니다."
+                                + System.lineSeparator() + System.lineSeparator()
+                                + "휠체어가 즉시 움직입니다. 조종간 조작은 무시됩니다.",
+                        () -> sendBridgeCommand("arm_and_drive", true,
+                                "시동 + 주행을 요청했습니다."));
+            } else {
+                confirmThen("주행 시작",
+                        "휠체어가 즉시 움직이기 시작합니다. 계속할까요?",
+                        () -> sendBridgeCommand("drive_start", true,
+                                "주행 시작을 요청했습니다."));
+            }
+        });
         driveStopButton.setOnClickListener(view -> sendBridgeCommand("drive_stop", false,
                 "주행 정지를 요청했습니다."));
         stackStartButton.setOnClickListener(view -> confirmThen(
@@ -572,14 +614,29 @@ public class MainActivity extends AppCompatActivity {
         }
         followerStatusText.setText(followerStatus);
         followerStatusText.setTextColor(ContextCompat.getColor(this,
-                policiesOff ? R.color.danger_red : R.color.text_primary));
+                policiesOff ? R.color.danger_red : R.color.text_tertiary));
+
+        boolean driving = renderDriveState(f, estop);
 
         // Grey out what the robot cannot honour rather than letting a press fail.
         boolean canDrive = f.optBoolean("follower_start_available", false);
         // The bridge refuses drive_start on any manual reading, not just an
         // E-STOP, so an enabled button there is a press that cannot succeed.
-        driveStartButton.setEnabled(canDrive && !estop && !manualIdle);
-        driveStopButton.setEnabled(canDrive);
+        manualIdleNow = manualIdle;
+        // No longer gated on !manualIdle: in manual the button sends
+        // arm_and_drive, which is exactly the command manual needs.
+        driveStartButton.setEnabled(canDrive && !estop);
+        driveStartButton.setText(
+                manualIdle ? R.string.mode_arm : R.string.drive_start);
+        // Stopping is not gated on the follower's start service. drive_stop
+        // runs stop.sh, which the bridge never makes wait for a job slot, and
+        // the moment an operator most needs it is the moment something in the
+        // graph has gone quiet -- exactly when follower_start_available drops
+        // out and this button used to grey itself out.
+        JSONObject jobs = f.optJSONObject("jobs_available");
+        driveStopButton.setEnabled(canDrive
+                || (jobs != null && jobs.optBoolean("halt", false)));
+        emphasiseStop(driving);
         // Arming and releasing are the same lever. Offering it only after an
         // E-STOP left a freshly brought-up chair with no way to arm at all:
         // [주행 시작] refused and pointed at a button that was greyed out.
@@ -689,6 +746,11 @@ public class MainActivity extends AppCompatActivity {
 
     /** A subsystem row: green when it is fine, amber when unknown, red when not. */
     private void addSubsystemRow(String name, String value, int state) {
+        addSubsystemRow(name, value, state, null);
+    }
+
+    private void addSubsystemRow(String name, String value, int state,
+                                 Runnable onTap) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(android.view.Gravity.CENTER_VERTICAL);
@@ -721,7 +783,26 @@ public class MainActivity extends AppCompatActivity {
                         : state == STATE_BAD ? R.color.status_disconnected_text
                         : R.color.text_primary));
         row.addView(reading);
+        if (onTap != null) {
+            row.setOnClickListener(v -> onTap.run());
+            // Without this the row is a live control that looks exactly like
+            // the four dead ones beside it.
+            TextView more = new TextView(this);
+            more.setText(" ⓘ");
+            more.setTextSize(13f);
+            more.setTextColor(ContextCompat.getColor(this, R.color.brand_blue));
+            row.addView(more);
+        }
         subsystemGrid.addView(row);
+    }
+
+    /** Pitch and roll, drawn. Not everyone reading this row knows the words. */
+    private void showTiltExplainer() {
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.tilt_explain_title)
+                .setView(getLayoutInflater().inflate(R.layout.dialog_tilt, null))
+                .setPositiveButton(R.string.close, null)
+                .show();
     }
 
     private static final int STATE_OK = 0;
@@ -758,14 +839,16 @@ public class MainActivity extends AppCompatActivity {
 
         // Tilt, in degrees, from the pose quaternion.
         if (f.isNull("pose_roll_deg") || f.isNull("pose_pitch_deg")) {
-            addSubsystemRow("차체 기울기", "데이터 없음", STATE_UNKNOWN);
+            addSubsystemRow("차체 기울기", "데이터 없음", STATE_UNKNOWN,
+                    this::showTiltExplainer);
         } else {
             double roll = f.optDouble("pose_roll_deg");
             double pitch = f.optDouble("pose_pitch_deg");
             double worst = Math.max(Math.abs(roll), Math.abs(pitch));
             addSubsystemRow("차체 기울기",
                     String.format(Locale.US, "피치 %.1f°  ·  롤 %.1f°", pitch, roll),
-                    worst >= 8.0 ? STATE_BAD : STATE_OK);
+                    worst >= 8.0 ? STATE_BAD : STATE_OK,
+                    this::showTiltExplainer);
         }
 
         addSubsystemRow("장애물", obstacleSummary(f), obstacleState(f));
@@ -835,7 +918,12 @@ public class MainActivity extends AppCompatActivity {
         String state = raw.startsWith("STALE") ? "입력 끊김" : "통과";
         int at = raw.indexOf("v=");
         if (at >= 0) {
-            return state + "  ·  " + raw.substring(at + 2) + " m/s";
+            // Label it as the COMMAND. This is tip_guard's own output speed,
+            // not the wheels' -- the measured figure is the big one on the map.
+            // Read side by side the two are a check on the base: a command of
+            // 0.40 against a measurement of 0.00 says the wheels are not
+            // answering, and that only reads correctly if both are named.
+            return state + "  ·  명령 " + raw.substring(at + 2) + " m/s";
         }
         return state;
     }
@@ -867,6 +955,230 @@ public class MainActivity extends AppCompatActivity {
         return false;
     }
 
+    /** Above this the chair is moving, whatever any status string claims. */
+    private static final double MOVING_MPS = 0.05;
+
+    /** The follower's own words for "the wheels are turning". */
+    private static boolean isDrivingState(String state) {
+        return "DRIVING".equals(state) || "BYPASS".equals(state)
+                || "RECOVER".equals(state);
+    }
+
+    /**
+     * waypoint_follower.py publishes its hold reason as a bare token. Those are
+     * addressed to whoever reads the log, not to whoever is standing next to
+     * the chair, so translate the ones we know and pass anything new through
+     * untouched rather than swallowing it.
+     */
+    private static String holdReasonKo(String reason) {
+        switch (reason) {
+            case "PAUSED":            return "주행이 일시정지 상태입니다";
+            case "MANUAL_MODE":       return "베이스가 수동 모드입니다";
+            case "BASE_STALE":        return "휠 베이스 응답이 끊겼습니다";
+            case "CLUSTERS_STALE":    return "장애물 인식이 끊겼습니다";
+            case "NO_CLOUD":          return "라이다 포인트가 들어오지 않습니다";
+            case "NO_POSE":           return "측위 위치가 없습니다";
+            case "ODOM_INITIALIZING": return "오도메트리 초기화 중입니다";
+            case "OBSTACLE":          return "경로 위 장애물 때문에 멈췄습니다";
+            case "OFF_BAND":          return "주행 가능 폭을 벗어났습니다";
+            case "OFF_ROUTE":         return "경로에서 벗어났습니다";
+            case "UNSAFE_CHORD":      return "다음 구간의 곡률이 너무 급합니다";
+            case "DEGRADED":          return "측위 품질이 떨어졌습니다";
+            case "LOST":              return "측위를 잃었습니다";
+            case "GOAL":              return "목적지에 도착했습니다";
+            default:                  return reason;
+        }
+    }
+
+    /**
+     * Say, in words, whether the chair is moving.
+     *
+     * The dashboard could show the readiness badge and "DRIVING wp=921/1917
+     * v=0.42" at the same moment and never once state plainly that the wheels
+     * were turning -- readiness is a precondition and the follower string is a
+     * diagnostic, and neither is the question an operator with a hand near the
+     * stop button is asking.
+     *
+     * The rule here: never print the idle label while the chair is measurably
+     * moving. A status string can be stale, wrong, or absent; measured speed
+     * cannot be argued with, so a disagreement between the two is reported as
+     * an alarm rather than resolved in favour of the quieter answer.
+     *
+     * @return true when the chair should be treated as under way.
+     */
+    private boolean renderDriveState(JSONObject f, boolean estop) {
+        String state = f.isNull("follower_state") ? null : f.optString("follower_state");
+        boolean speedKnown = !f.isNull("speed_mps");
+        double speed = speedKnown ? f.optDouble("speed_mps") : 0.0;
+        boolean moving = speedKnown && speed > MOVING_MPS;
+
+        String hold = null;
+        if (state != null && state.startsWith("HOLD:")) {
+            hold = state.substring(5);
+        } else if (state != null && !state.isEmpty() && !isDrivingState(state)) {
+            // A blocking reason can arrive in place of the state word.
+            hold = state;
+        }
+        boolean driving = isDrivingState(state) || moving;
+        boolean manual = "manual".equals(f.optString("drive_mode"));
+
+        String label;
+        int pill;
+        int fg;
+        if (moving && manual && !estop) {
+            // Manual + moving is the rider driving. Saying so is worth a line
+            // of its own: the follower reports HOLD the whole time, and the
+            // first version of this alarmed on every joystick push.
+            label = getString(R.string.drive_manual_joystick);
+            pill = R.drawable.drive_pill_idle;
+            fg = R.color.drive_idle_text;
+        } else if (moving && (estop || hold != null)) {
+            // The two halves of the dashboard disagree. Say so; do not pick one.
+            label = "⚠ 아직 움직이는 중";
+            pill = R.drawable.drive_pill_alarm;
+            fg = R.color.drive_alarm_text;
+        } else if (estop) {
+            label = "E-STOP — 정지";
+            pill = R.drawable.drive_pill_alarm;
+            fg = R.color.drive_alarm_text;
+        } else if (isDrivingState(state)) {
+            label = getString("BYPASS".equals(state) ? R.string.drive_live_bypass
+                    : "RECOVER".equals(state) ? R.string.drive_live_recover
+                    : R.string.drive_live);
+            pill = R.drawable.drive_pill_live;
+            fg = R.color.white;
+        } else if (moving) {
+            label = "⚠ 움직이는 중 — 팔로워 상태 없음";
+            pill = R.drawable.drive_pill_alarm;
+            fg = R.color.drive_alarm_text;
+        } else if ("MANUAL_MODE".equals(hold)) {
+            // The follower reports MANUAL_MODE as a hold, but a base resting in
+            // manual after bring-up is not a stopped drive -- it is the normal
+            // idle state, and colouring it as a hold made every clean bring-up
+            // look like something had gone wrong mid-route.
+            label = getString(R.string.drive_idle_manual);
+            pill = R.drawable.drive_pill_idle;
+            fg = R.color.drive_idle_text;
+        } else if (hold != null) {
+            label = getString(R.string.drive_hold);
+            pill = R.drawable.drive_pill_hold;
+            fg = R.color.drive_hold_text;
+        } else if (state == null && !speedKnown) {
+            label = getString(R.string.drive_unknown);
+            pill = R.drawable.drive_pill_idle;
+            fg = R.color.drive_idle_text;
+        } else {
+            label = getString(R.string.drive_idle);
+            pill = R.drawable.drive_pill_idle;
+            fg = R.color.drive_idle_text;
+        }
+        driveStateText.setText(label);
+        driveStateText.setBackgroundResource(pill);
+        driveStateText.setTextColor(ContextCompat.getColor(this, fg));
+
+        StringBuilder detail = new StringBuilder();
+        if (hold != null) {
+            detail.append(holdReasonKo(hold));
+        }
+        if (speedKnown) {
+            if (detail.length() > 0) {
+                detail.append("   ·   ");
+            }
+            detail.append(String.format(Locale.US, "%.2f m/s", speed));
+        }
+        // Where the speed came from. A null source is not cosmetic: the
+        // bridge refuses to release an E-STOP without a fresh speed reading,
+        // so this silently decides whether that guard can fire at all.
+        if (speedKnown && !f.isNull("speed_source")) {
+            String src = f.optString("speed_source");
+            detail.append("wheel".equals(src) ? " (휠)"
+                    : "lio".equals(src) ? " (LIO)" : "");
+        } else if (!speedKnown) {
+            if (detail.length() > 0) {
+                detail.append("   ·   ");
+            }
+            detail.append("속도 판독 없음");
+        }
+        if (!f.isNull("wp_index") && !f.isNull("wp_total")) {
+            int total = f.optInt("wp_total");
+            if (total > 0) {
+                if (detail.length() > 0) {
+                    detail.append("   ·   ");
+                }
+                detail.append(String.format(Locale.US, "경로 %.0f%%",
+                        100.0 * f.optInt("wp_index") / total));
+            }
+        }
+        if (detail.length() == 0) {
+            detail.append(getString(R.string.empty_value));
+        }
+        driveDetailText.setText(detail.toString());
+        return driving;
+    }
+
+    /**
+     * While the chair is under way, the ordinary stop is the button the
+     * operator is reaching for, so it takes the room and the colour; the rest
+     * of the time it is a plain outlined control and starting gets the
+     * emphasis. E-STOP keeps its own size above this either way -- this is the
+     * ordinary stop, not the emergency one.
+     */
+    private void emphasiseStop(boolean driving) {
+        // [시동 + 주행 시작] is nine characters wide and the narrow slot is not,
+        // so the label has to shrink with the button rather than wrap out of a
+        // fixed-height button and get cut in half.
+        driveStartButton.setTextSize(driving ? 13f : 16f);
+        setWeight(driveStartButton, driving ? 1f : 2f);
+        setWeight(driveStopButton, driving ? 2f : 1f);
+        if (driving) {
+            driveStopButton.setBackgroundTintList(
+                    ContextCompat.getColorStateList(this, R.color.btn_fill_stop));
+            driveStopButton.setTextColor(
+                    ContextCompat.getColorStateList(this, R.color.btn_label_on_fill));
+            driveStopButton.setText(R.string.drive_stop_now);
+        } else {
+            driveStopButton.setBackgroundTintList(driveStopTint);
+            driveStopButton.setTextColor(
+                    ContextCompat.getColorStateList(this, R.color.btn_label_primary));
+            driveStopButton.setText(R.string.drive_stop);
+        }
+    }
+
+    private static String formatDistance(float metres) {
+        return metres >= 1000f
+                ? String.format(Locale.US, "%.1f km", metres / 1000f)
+                : String.format(Locale.US, "%.0f m", metres);
+    }
+
+    /**
+     * Deliberately coarse. This divides a distance by whatever speed happens
+     * to be showing this instant, on a route with holds and corners in it, so
+     * a figure to the second would be claiming an accuracy it does not have.
+     */
+    private static String formatEta(double seconds) {
+        if (!(seconds > 0) || Double.isInfinite(seconds)) {
+            return "--";
+        }
+        long minutes = Math.round(seconds / 60.0);
+        if (minutes < 1) {
+            return "1분 미만";
+        }
+        return minutes >= 60
+                ? String.format(Locale.US, "%d시간 %d분", minutes / 60, minutes % 60)
+                : String.format(Locale.US, "약 %d분", minutes);
+    }
+
+    private static void setWeight(View view, float weight) {
+        ViewGroup.LayoutParams params = view.getLayoutParams();
+        if (params instanceof LinearLayout.LayoutParams) {
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) params;
+            if (lp.weight != weight) {
+                lp.weight = weight;
+                view.setLayoutParams(lp);
+            }
+        }
+    }
+
     /**
      * No live link, no commands. The big red E-STOP is deliberately NOT among
      * these: greying out an emergency control teaches the operator to doubt it,
@@ -875,6 +1187,10 @@ public class MainActivity extends AppCompatActivity {
     private void disableRobotControls() {
         driveStartButton.setEnabled(false);
         driveStopButton.setEnabled(false);
+        // A red, wide stop button left over from the last frame reads as "the
+        // chair is driving" on a dashboard that is no longer being told
+        // anything at all.
+        emphasiseStop(false);
         estopReleaseButton.setEnabled(false);
         stackStartButton.setEnabled(false);
         stackStopButton.setEnabled(false);
@@ -916,18 +1232,13 @@ public class MainActivity extends AppCompatActivity {
         if (!f.isNull("loc_reason") && !f.optString("loc_reason").isEmpty()) {
             line.append("\n사유 ").append(f.optString("loc_reason"));
         }
-        if (!f.isNull("wp_index") && !f.isNull("wp_total")) {
-            int done = f.optInt("wp_index");
-            int total = f.optInt("wp_total");
-            // Percent is what an operator can judge at a glance; 921/1917 needs
-            // mental arithmetic before it means anything.
-            line.append(total > 0
-                    ? String.format(Locale.US, "%n경로 진행 %.0f%%  (%d/%d)",
-                            100.0 * done / total, done, total)
-                    : String.format(Locale.US, "%n경로 %d/%d", done, total));
-            if (!f.isNull("follower_state")) {
-                line.append("  ·  ").append(f.optString("follower_state"));
-            }
+        // Progress moved to the trip block above, which owns the bar and the
+        // big numbers; repeating it here was the same figure twice in adjacent
+        // lines. The follower's own state word stays, because that is a
+        // diagnostic and belongs with the other diagnostics.
+        if (!f.isNull("follower_state")) {
+            line.append(System.lineSeparator()).append("팔로워 ")
+                    .append(f.optString("follower_state"));
         }
         if (routeMismatch) {
             line.append(String.format(Locale.US,
@@ -939,10 +1250,47 @@ public class MainActivity extends AppCompatActivity {
         } else if (stale) {
             line.append("\n위치 갱신 끊김 (표시는 마지막 값)");
         }
+        renderTrip(f, routeMismatch);
         navStatusText.setText(line.toString());
         navStatusText.setTextColor(ContextCompat.getColor(this,
                 (px == null || stale || routeMismatch)
                         ? R.color.status_disconnected_text : R.color.text_secondary));
+    }
+
+    /**
+     * How far is left and how long that is, next to the map that shows where.
+     *
+     * Hidden rather than zeroed when there is no progress to report: a big
+     * bold "0 m" beside a route the chair has not started is worse than an
+     * empty space, because it reads as arrival.
+     */
+    private void renderTrip(JSONObject f, boolean routeMismatch) {
+        boolean known = !routeMismatch
+                && !f.isNull("wp_index") && !f.isNull("wp_total")
+                && f.optInt("wp_total") > 0;
+        if (!known) {
+            tripBlock.setVisibility(View.GONE);
+            return;
+        }
+        tripBlock.setVisibility(View.VISIBLE);
+
+        int done = f.optInt("wp_index");
+        int total = f.optInt("wp_total");
+        int percent = (int) Math.round(100.0 * done / total);
+        tripProgressBar.setProgress(Math.max(0, Math.min(100, percent)));
+        tripProgressText.setText(String.format(Locale.US,
+                "경로 진행 %d%%   ·   %d / %d", percent, done, total));
+
+        float left = routeMapView.remainingMetres(done);
+        tripDistanceText.setText(
+                left >= 0f ? formatDistance(left) : getString(R.string.empty_value));
+
+        // Only when the chair is actually moving. Dividing by a speed of zero,
+        // or by the speed it happened to hold before a hold, invents a number.
+        boolean moving = !f.isNull("speed_mps") && f.optDouble("speed_mps") > MOVING_MPS;
+        tripEtaText.setText(left >= 0f && moving
+                ? formatEta(left / f.optDouble("speed_mps"))
+                : getString(R.string.empty_value));
     }
 
     /** Bring-up script progress. The bridge relays the script's own last log line. */
@@ -983,6 +1331,25 @@ public class MainActivity extends AppCompatActivity {
                             label, f.optInt("job_exit_code", -1), when, tail);
         }
         boolean freshFailure = "failed".equals(state) && f.optDouble("job_age_s", 0) <= 120;
+        // Which controller this button will actually bring up. Same button,
+        // same script, different robot -- the bridge has been sending this
+        // since the profile mix-up in the field and nothing was showing it.
+        String profile = f.isNull("stack_profile") ? null : f.optString("stack_profile");
+        stackStartButton.setText(profile == null || profile.isEmpty()
+                ? getString(R.string.stack_start)
+                : getString(R.string.stack_start) + "  ·  " + profile);
+
+        // Is this run being recorded. Unknown is its own answer.
+        String blackbox;
+        if (f.isNull("blackbox_recording")) {
+            blackbox = getString(R.string.blackbox_unknown);
+        } else {
+            blackbox = f.optBoolean("blackbox_recording")
+                    ? "● " + getString(R.string.blackbox_on)
+                    : getString(R.string.blackbox_off);
+        }
+        text = text + "   ·   " + blackbox;
+
         jobStatusText.setText(text);
         jobStatusText.setTextColor(ContextCompat.getColor(this,
                 freshFailure ? R.color.danger_red

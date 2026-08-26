@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Roll, seen from the front: the chair leaning to one side. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="132dp"
+    android:height="88dp"
+    android:viewportWidth="132"
+    android:viewportHeight="88">
+    <path android:pathData="M14,64 L120,64"
+        android:strokeColor="#B9C6D4" android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path android:pathData="M18,70 L116,46"
+        android:strokeColor="#98A2B3" android:strokeWidth="3"
+        android:strokeLineCap="round" />
+    <path android:pathData="M56,64 A34,34 0 0,0 54,55"
+        android:strokeColor="#0175C2" android:strokeWidth="2.5"
+        android:fillColor="#00000000" />
+    <!-- Both wheels, seen edge-on, sitting on the tilted ground. -->
+    <path android:pathData="M44,58 L44,30"
+        android:strokeColor="#0B4F83" android:strokeWidth="5"
+        android:strokeLineCap="round" />
+    <path android:pathData="M92,46 L92,18"
+        android:strokeColor="#0B4F83" android:strokeWidth="5"
+        android:strokeLineCap="round" />
+    <!-- Seat, tilted the same way. -->
+    <path android:pathData="M40,34 L96,20"
+        android:strokeColor="#0B4F83" android:strokeWidth="4"
+        android:strokeLineCap="round" />
+    <!-- Backrest coming toward the viewer. -->
+    <path android:pathData="M68,27 L66,10"
+        android:strokeColor="#0B4F83" android:strokeWidth="4"
+        android:strokeLineCap="round" />
+</vector>
