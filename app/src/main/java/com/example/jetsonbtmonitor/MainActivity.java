@@ -1393,9 +1393,12 @@ public class MainActivity extends AppCompatActivity {
         // Never defaulted. Two perception nodes publish this and they name
         // different origins; a guess here would look exactly like a reading.
         String frame = f.isNull("objects_frame") ? null : f.optString("objects_frame");
-        obstacleFieldView.update(objects, status, frame, linkStale);
+        // What the bridge left out. Zero when it did not say, so an older
+        // bridge simply shows no such note rather than claiming nothing hid.
+        int hidden = f.isNull("objects_hidden") ? 0 : f.optInt("objects_hidden");
+        obstacleFieldView.update(objects, status, frame, hidden, linkStale);
         if (fullFieldView != null) {
-            fullFieldView.update(objects, status, frame, linkStale);
+            fullFieldView.update(objects, status, frame, hidden, linkStale);
         }
     }
 

@@ -124,6 +124,13 @@ public class ObstacleFieldView extends View {
      * view that silently picks one is a view that cannot be checked.
      */
     private String frame;
+    /**
+     * How many clusters the bridge left out: ground clutter below the display
+     * floor, plus anything past the count cap. Printed, because a trimmed
+     * view that does not say it is trimmed reads as an empty pavement -- and
+     * the operator would be right to believe it.
+     */
+    private int hidden;
     private boolean stale = true;
     private String emptyOverride;
 
@@ -199,9 +206,10 @@ public class ObstacleFieldView extends View {
      * @param linkStale whether the reading is too old to believe.
      */
     public void update(JSONArray frameObjects, String objectsStatus,
-                       String objectsFrame, boolean linkStale) {
+                       String objectsFrame, int objectsHidden, boolean linkStale) {
         status = objectsStatus;
         frame = objectsFrame;
+        hidden = objectsHidden;
         stale = linkStale;
         haveObjects = frameObjects != null;
         // A frame has landed, so "waiting for the first one" has stopped being
@@ -568,6 +576,9 @@ public class ObstacleFieldView extends View {
         }
         if (!objects.isEmpty()) {
             text.append(String.format(Locale.US, "  ·  %d개", objects.size()));
+        }
+        if (hidden > 0) {
+            text.append(String.format(Locale.US, " (+%d 숨김)", hidden));
         }
         // Whose origin the rings are measured from. One word, from the robot,
         // because the alternative is a picture that cannot say what it is of.
