@@ -113,6 +113,17 @@ public class ObstacleFieldView extends View {
     private final List<Obj> objects = new ArrayList<>();
     private boolean haveObjects;
     private String status;
+    /**
+     * Which origin x and y are measured from, in the producer's own words.
+     *
+     * Not decoration. Two nodes publish this pavement and they do not agree:
+     * obstacle_clusters.py answers "lidar", hybrid_object_fusion.py answers
+     * "chair_centre", and those sit about half a metre apart. Both are
+     * chair-aligned and x-forward, so the picture is right either way -- but
+     * the chair drawn at the origin means a different thing in each, and a
+     * view that silently picks one is a view that cannot be checked.
+     */
+    private String frame;
     private boolean stale = true;
     private String emptyOverride;
 
@@ -182,10 +193,15 @@ public class ObstacleFieldView extends View {
      * @param objectsStatus the frame's {@code objects_status}: "OK", one of the
      *                     producer's own refusals (NO_CLOUD, NO_MAP_POSE), or
      *                     null when nothing has been heard at all.
+     * @param objectsFrame the frame's {@code objects_frame}: the producer's
+     *                     own name for the origin x/y are about, or null when
+     *                     it did not say -- which is not the same as "lidar".
      * @param linkStale whether the reading is too old to believe.
      */
-    public void update(JSONArray frameObjects, String objectsStatus, boolean linkStale) {
+    public void update(JSONArray frameObjects, String objectsStatus,
+                       String objectsFrame, boolean linkStale) {
         status = objectsStatus;
+        frame = objectsFrame;
         stale = linkStale;
         haveObjects = frameObjects != null;
         // A frame has landed, so "waiting for the first one" has stopped being
@@ -480,14 +496,24 @@ public class ObstacleFieldView extends View {
         float py = cy - obj.x * scale;
         box.set(px - halfW, py - halfL, px + halfW, py + halfL);
 
-        boxFill.setColor(color);
-        boxFill.setAlpha(outside ? 40 : 95);
-        canvas.drawRoundRect(box, dp(2f), dp(2f), boxFill);
+        // Outside the corridor: an outline, and nothing else. Most of what
+        // the lidar returns beside a pavement is the pavement -- kerbs, walls,
+        // hedges, parked cars -- and filled boxes for all of it bury the one
+        // object that is actually in the way. They still have to be drawn:
+        // a person standing just off the corridor is exactly who steps into
+        // it. So they are kept as scenery, not as findings.
+        if (!outside) {
+            boxFill.setColor(color);
+            boxFill.setAlpha(95);
+            canvas.drawRoundRect(box, dp(2f), dp(2f), boxFill);
+        }
         boxEdge.setColor(color);
+        boxEdge.setAlpha(outside ? 140 : 255);
         // In the chair's way: heavier. It is the only distinction on this view
         // that decides anything.
         boxEdge.setStrokeWidth(dp(outside ? 1f : 2f));
         canvas.drawRoundRect(box, dp(2f), dp(2f), boxEdge);
+        boxEdge.setAlpha(255);
     }
 
     /**
@@ -504,7 +530,14 @@ public class ObstacleFieldView extends View {
             Obj obj = objects.get(i);
             boolean inBand = "inside".equals(obj.band) || "overlap".equals(obj.band);
             boolean moving = "moving".equals(obj.motion);
-            if (!inBand && !moving) {
+            // Scenery outside the corridor gets no label even when the tracker
+            // calls it moving: a hedge whose centroid slides as more of it
+            // comes into view is the commonest "moving" thing on a pavement,
+            // and naming it is what turns the view back into clutter.
+            if (!inBand) {
+                continue;
+            }
+            if (!moving && !"static".equals(obj.motion)) {
                 continue;
             }
             StringBuilder text = new StringBuilder(
@@ -536,6 +569,10 @@ public class ObstacleFieldView extends View {
         if (!objects.isEmpty()) {
             text.append(String.format(Locale.US, "  ·  %d개", objects.size()));
         }
+        // Whose origin the rings are measured from. One word, from the robot,
+        // because the alternative is a picture that cannot say what it is of.
+        text.append("  ·  ").append(frame == null || frame.isEmpty()
+                ? "기준 미상" : frame);
         if (stale) {
             text.append("  ·  갱신 끊김");
         }

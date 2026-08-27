@@ -1390,9 +1390,12 @@ public class MainActivity extends AppCompatActivity {
     private void renderObstacleField(JSONObject f) {
         JSONArray objects = f.isNull("objects") ? null : f.optJSONArray("objects");
         String status = f.isNull("objects_status") ? null : f.optString("objects_status");
-        obstacleFieldView.update(objects, status, linkStale);
+        // Never defaulted. Two perception nodes publish this and they name
+        // different origins; a guess here would look exactly like a reading.
+        String frame = f.isNull("objects_frame") ? null : f.optString("objects_frame");
+        obstacleFieldView.update(objects, status, frame, linkStale);
         if (fullFieldView != null) {
-            fullFieldView.update(objects, status, linkStale);
+            fullFieldView.update(objects, status, frame, linkStale);
         }
     }
 
@@ -1508,7 +1511,12 @@ public class MainActivity extends AppCompatActivity {
 
         String text;
         if ("idle".equals(state)) {
-            text = "대기 중";
+            // "대기 중" is about the job runner, which only ever knew what
+            // this app launched -- and the stack is started at the keyboard
+            // as often as not. Saying it while every node is registered on
+            // the master is how the dashboard came to report a chair that
+            // was plainly running as not started. Ask the robot instead.
+            text = stackStateText(f);
         } else if (running) {
             text = String.format(Locale.US, "%s 진행 중 (%.0f초)\n%s",
                     label, f.optDouble("job_elapsed_s", 0), tail);
@@ -1559,6 +1567,30 @@ public class MainActivity extends AppCompatActivity {
         // abort for one, since job_cancel cannot reach the detached sensors.
         stackStopButton.setEnabled(avail != null && avail.optBoolean("stack_stop", false));
         jobCancelButton.setEnabled(running);
+    }
+
+    /**
+     * Whether the robot software is up, in the master's own count of nodes.
+     *
+     * A count, not a verdict, because a stack comes up in layers and dies in
+     * pieces: 3 of 5 looks like a working chair right up until it is asked to
+     * move, and that is the state worth naming out loud. Null stays "이 앱이
+     * 기동한 것 없음" -- an older bridge cannot answer, and a guess here reads
+     * exactly like a reading.
+     */
+    private String stackStateText(JSONObject f) {
+        if (f.isNull("stack_nodes_up") || f.isNull("stack_nodes_total")) {
+            return "이 앱으로 기동한 것 없음";
+        }
+        int up = f.optInt("stack_nodes_up");
+        int total = f.optInt("stack_nodes_total");
+        if (up >= total) {
+            return String.format(Locale.US, "기동됨 (앱 밖에서 시작) · 노드 %d/%d", up, total);
+        }
+        if (up == 0) {
+            return "내려가 있음 · 노드 0/" + total;
+        }
+        return String.format(Locale.US, "일부만 기동 · 노드 %d/%d", up, total);
     }
 
     private void setupBackNavigation() {
