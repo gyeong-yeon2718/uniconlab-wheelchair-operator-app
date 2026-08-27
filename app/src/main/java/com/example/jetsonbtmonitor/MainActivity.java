@@ -115,6 +115,15 @@ public class MainActivity extends AppCompatActivity {
     /** Non-null only while the full-screen map is up, and fed the same frames. */
     private RouteMapView fullMapView;
     private android.app.Dialog mapDialog;
+    /**
+     * The close-in view of what the lidar sees. Its objects arrive in every
+     * telemetry frame rather than once per connection like the route, so
+     * unlike the map there is nothing to replay into the full-screen copy --
+     * the next frame fills it, half a second later at worst.
+     */
+    private ObstacleFieldView obstacleFieldView;
+    private ObstacleFieldView fullFieldView;
+    private android.app.Dialog fieldDialog;
     private View tripBlock;
     private TextView tripDistanceText;
     private TextView tripEtaText;
@@ -256,6 +265,7 @@ public class MainActivity extends AppCompatActivity {
                     // Nothing on screen is current any more, and a dashboard that
                     // keeps offering E-STOP over a dead link is worse than one
                     // that admits it cannot reach the chair.
+                    markObstacleFieldStale();
                     disableRobotControls();
                 });
             }
@@ -416,6 +426,8 @@ public class MainActivity extends AppCompatActivity {
         jobCancelButton = findViewById(R.id.jobCancelButton);
         routeMapView = findViewById(R.id.routeMapView);
         routeMapView.setOnClickListener(view -> showFullMap());
+        obstacleFieldView = findViewById(R.id.obstacleFieldView);
+        obstacleFieldView.setOnClickListener(view -> showFullField());
         // Matches the speed readout's height plus its margin, so the fitted
         // route never runs underneath it.
         routeMapView.setBottomInset(
@@ -672,6 +684,7 @@ public class MainActivity extends AppCompatActivity {
         estopHintText.setText(estop ? R.string.estop_hint : R.string.mode_arm_hint);
 
         renderNavSection(f);
+        renderObstacleField(f);
         renderJobSection(f);
     }
 
@@ -763,6 +776,7 @@ public class MainActivity extends AppCompatActivity {
                 ContextCompat.getColor(this, R.color.status_reconnecting_bg));
         readinessText.setTextColor(
                 ContextCompat.getColor(this, R.color.status_disconnected_text));
+        markObstacleFieldStale();
         disableRobotControls();
         if (bluetoothClient != null) {
             bluetoothClient.forceReconnect();
@@ -1361,6 +1375,75 @@ public class MainActivity extends AppCompatActivity {
         });
         fullMapView = map;
         mapDialog = dialog;
+        dialog.show();
+    }
+
+    /**
+     * The nearest objects the lidar has, drawn about the chair.
+     *
+     * Fed from the same frame as everything else, and deliberately NOT from
+     * the pose: this is the one panel that still means something when
+     * localization is what has failed. A frame whose objects the bridge marked
+     * unavailable draws as "no data" rather than as an empty pavement -- those
+     * look identical and mean opposite things.
+     */
+    private void renderObstacleField(JSONObject f) {
+        JSONArray objects = f.isNull("objects") ? null : f.optJSONArray("objects");
+        String status = f.isNull("objects_status") ? null : f.optString("objects_status");
+        obstacleFieldView.update(objects, status, linkStale);
+        if (fullFieldView != null) {
+            fullFieldView.update(objects, status, linkStale);
+        }
+    }
+
+    /** Both copies of the close-in view, when the link stops delivering. */
+    private void markObstacleFieldStale() {
+        if (obstacleFieldView != null) {
+            obstacleFieldView.markStale();
+        }
+        if (fullFieldView != null) {
+            fullFieldView.markStale();
+        }
+    }
+
+    /**
+     * The close-in view, full screen.
+     *
+     * The card fits itself to whatever is out there, which is right for a
+     * glance and wrong for "is that person clear of the left wheel" -- for
+     * that the range has to hold still while the scene changes. Same view,
+     * same frames, with the range pinnable.
+     */
+    private void showFullField() {
+        if (fieldDialog != null && fieldDialog.isShowing()) {
+            return;
+        }
+        View content = getLayoutInflater().inflate(R.layout.dialog_field, null);
+        ObstacleFieldView field = content.findViewById(R.id.fieldFullView);
+        // Until the next telemetry frame lands, say why it is empty rather
+        // than letting a blank ring diagram read as a clear pavement.
+        field.setEmptyOverride(bluetoothClient != null && bluetoothClient.isConnected()
+                ? "다음 수신 대기 중…" : "브릿지에 연결되어 있지 않습니다");
+        content.findViewById(R.id.fieldRangeInButton)
+                .setOnClickListener(v -> field.stepRange(-1));
+        content.findViewById(R.id.fieldRangeOutButton)
+                .setOnClickListener(v -> field.stepRange(1));
+        content.findViewById(R.id.fieldRangeAutoButton)
+                .setOnClickListener(v -> field.resetRange());
+
+        android.app.Dialog dialog = new android.app.Dialog(
+                this, android.R.style.Theme_Material_Light_NoActionBar);
+        dialog.setContentView(content);
+        content.findViewById(R.id.fieldCloseButton)
+                .setOnClickListener(v -> dialog.dismiss());
+        // Stop feeding a view that is being torn down, and drop the reference
+        // so a rotation or a back press does not leak the whole dialog.
+        dialog.setOnDismissListener(d -> {
+            fullFieldView = null;
+            fieldDialog = null;
+        });
+        fullFieldView = field;
+        fieldDialog = dialog;
         dialog.show();
     }
 

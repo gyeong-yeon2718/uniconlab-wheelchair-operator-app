@@ -170,4 +170,15 @@
     <string name="map_rotate">↻ 45°</string>
     <string name="map_reset">초기화</string>
     <string name="map_open_hint">지도를 누르면 크게 보고 확대·회전할 수 있습니다.</string>
+    <string name="field_label">주변 물체 (라이다 기준)</string>
+    <string name="field_title">주변 물체 근접 뷰</string>
+    <string name="field_open_hint">누르면 크게 보고 표시 반경을 바꿀 수 있습니다.</string>
+    <string name="field_hint">휠체어 기준 위에서 내려다본 화면입니다. 위쪽이 진행 방향, 꼬리선은 최근 3초 이동 경로입니다.</string>
+    <string name="field_range_in">－ 가까이</string>
+    <string name="field_range_out">＋ 멀리</string>
+    <string name="field_range_auto">자동</string>
+    <string name="field_legend_person">■ 사람</string>
+    <string name="field_legend_vehicle">■ 차량</string>
+    <string name="field_legend_obstacle">■ 장애물</string>
+    <string name="field_legend_outside">■ 회랑 밖</string>
 </resources>

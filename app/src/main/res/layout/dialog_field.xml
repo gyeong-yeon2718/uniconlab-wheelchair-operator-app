@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The close-in view, big enough to work in. The dashboard card fits itself
+     to whatever the lidar can see, which is the right default and no use for
+     "how far is that person from the left wheel" - so this one lets the range
+     be pinned and read against the rings. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/card_background"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="18dp"
+        android:paddingTop="14dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="10dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/field_title"
+            android:textColor="@color/text_primary"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/fieldCloseButton"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:minWidth="0dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/close"
+            android:textColor="@color/btn_label_primary"
+            android:textSize="14sp"
+            app:cornerRadius="10dp" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/hairline" />
+
+    <com.example.jetsonbtmonitor.ObstacleFieldView
+        android:id="@+id/fieldFullView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/card_background" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/field_legend_person"
+            android:textColor="@color/object_person"
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/field_legend_vehicle"
+            android:textColor="@color/object_vehicle"
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/field_legend_obstacle"
+            android:textColor="@color/object_obstacle"
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/field_legend_outside"
+            android:textColor="@color/object_outside"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:lineSpacingExtra="3dp"
+        android:paddingStart="18dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="18dp"
+        android:text="@string/field_hint"
+        android:textColor="@color/text_tertiary"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="14dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/fieldRangeInButton"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_marginEnd="5dp"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:text="@string/field_range_in"
+            android:textColor="@color/btn_label_primary"
+            android:textSize="14sp"
+            app:cornerRadius="10dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/fieldRangeOutButton"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="5dp"
+            android:layout_marginEnd="5dp"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:text="@string/field_range_out"
+            android:textColor="@color/btn_label_primary"
+            android:textSize="14sp"
+            app:cornerRadius="10dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/fieldRangeAutoButton"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="5dp"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:text="@string/field_range_auto"
+            android:textColor="@color/btn_label_blue"
+            android:textSize="14sp"
+            app:cornerRadius="10dp"
+            app:strokeColor="@color/btn_stroke_blue" />
+    </LinearLayout>
+</LinearLayout>

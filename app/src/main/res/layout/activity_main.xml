@@ -393,6 +393,90 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- The other map: what the lidar sees right now, chair-centred.
+                 Separate from the route card above on purpose. That one is
+                 fitted to 250 m of campus, where a person 3 m away is smaller
+                 than a pixel, and it is drawn from the localization pose - so
+                 it says nothing at all when localization is the thing that has
+                 gone wrong. This one is raw sensor geometry about the chair. -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                app:cardBackgroundColor="@color/card_background"
+                app:cardCornerRadius="14dp"
+                app:cardElevation="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="18dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/field_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="14sp" />
+
+                    <com.example.jetsonbtmonitor.ObstacleFieldView
+                        android:id="@+id/obstacleFieldView"
+                        android:layout_width="match_parent"
+                        android:layout_height="240dp"
+                        android:layout_marginTop="8dp"
+                        android:background="@color/input_background" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/field_legend_person"
+                            android:textColor="@color/object_person"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/field_legend_vehicle"
+                            android:textColor="@color/object_vehicle"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/field_legend_obstacle"
+                            android:textColor="@color/object_obstacle"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/field_legend_outside"
+                            android:textColor="@color/object_outside"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:lineSpacingExtra="3dp"
+                        android:text="@string/field_open_hint"
+                        android:textColor="@color/text_tertiary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

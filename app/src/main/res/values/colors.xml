@@ -57,4 +57,16 @@
          which showed up as a hard blue box around every card. -->
     <color name="hairline">#E6EDF5</color>
     <color name="accent_cyan">#5FC9F3</color>
+    <!-- Perception classes, matching CLASS_COLORS in obstacle_clusters.py so
+         the phone and the RViz screen in the lab do not disagree about which
+         box is the person. ObstacleFieldView reads these rather than keeping
+         a second copy; the legend beside it reads the same four. -->
+    <color name="object_person">#E63333</color>
+    <color name="object_vehicle">#3366E6</color>
+    <color name="object_obstacle">#E6B31A</color>
+    <color name="object_outside">#8A94A6</color>
+    <!-- Anything whose publisher has gone quiet. Drawn in the same grey the
+         route map greys a stale pose with, because it means the same thing:
+         this is the last thing we heard, not what is out there now. -->
+    <color name="object_stale">#C2C8D2</color>
 </resources>
