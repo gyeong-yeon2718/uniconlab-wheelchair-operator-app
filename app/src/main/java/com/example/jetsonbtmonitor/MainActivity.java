@@ -108,8 +108,6 @@ public class MainActivity extends AppCompatActivity {
      * cannot ask for it when it opens. Kept here and replayed into the copy.
      */
     private JSONArray routePoints;
-    private JSONArray bandLeft;
-    private JSONArray bandRight;
     private int routeStride = 1;
     private int routeCountFull;
     /** Non-null only while the full-screen map is up, and fed the same frames. */
@@ -289,8 +287,12 @@ public class MainActivity extends AppCompatActivity {
                         JSONObject frame = new JSONObject(line);
                         String type = frame.optString("type");
                         if ("route".equals(type)) {
-                            bandLeft = frame.optJSONArray("band_left");
-                            bandRight = frame.optJSONArray("band_right");
+                            // band_left/band_right are still in this frame and
+                            // the follower still drives inside them; the map
+                            // just does not draw them any more. The ribbon was
+                            // wide enough to become the line the eye followed,
+                            // which left the route -- the one thing the map
+                            // exists to show -- underneath it.
                             routePoints = frame.optJSONArray("points");
                             routeStride = frame.optInt("stride", 1);
                             routeCountFull =
@@ -298,11 +300,9 @@ public class MainActivity extends AppCompatActivity {
                             // A new route is a new run; last run's pace is
                             // not evidence about this one.
                             etaPaceMps = Double.NaN;
-                            routeMapView.setBand(bandLeft, bandRight);
                             routeMapView.setRoute(routePoints, routeStride,
                                     routeCountFull);
                             if (fullMapView != null) {
-                                fullMapView.setBand(bandLeft, bandRight);
                                 fullMapView.setRoute(routePoints, routeStride,
                                         routeCountFull);
                             }
@@ -1345,7 +1345,6 @@ public class MainActivity extends AppCompatActivity {
         map.setInteractive(true);
         // Replay what the card already has; the route frame will not come again.
         if (routePoints != null) {
-            map.setBand(bandLeft, bandRight);
             map.setRoute(routePoints, routeStride, routeCountFull);
         }
         map.setOnViewChanged((scale, rotation, moved) -> zoomText.setText(

@@ -109,11 +109,6 @@ public class RouteMapView extends View {
 
     private float[] routeX = new float[0];
     private float[] routeY = new float[0];
-    /** Drivable corridor edges, same map frame as the route. */
-    private float[] bandLX = new float[0];
-    private float[] bandLY = new float[0];
-    private float[] bandRX = new float[0];
-    private float[] bandRY = new float[0];
     private int progressIndex = -1;
     /** Points are sent thinned; wp_index counts the FULL route, so divide. */
     private int stride = 1;
@@ -153,10 +148,7 @@ public class RouteMapView extends View {
     private final Paint chairPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
-    private final Path band = new Path();
     private final Path arrow = new Path();
-    private final Paint bandFill = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint bandEdge = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint haloPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint northPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
@@ -176,14 +168,6 @@ public class RouteMapView extends View {
 
         dotPaint.setColor(Color.parseColor("#98A2B3"));
         chairPaint.setColor(Color.parseColor("#12805C"));
-        // The corridor the chair is allowed to use. Filled rather than
-        // outlined because the useful reading is how much room is left here,
-        // and on a phone-sized view a filled ribbon answers that at a glance.
-        bandFill.setStyle(Paint.Style.FILL);
-        bandFill.setColor(Color.parseColor("#B7E2F5"));
-        bandEdge.setStyle(Paint.Style.STROKE);
-        bandEdge.setStrokeWidth(2f);
-        bandEdge.setColor(Color.parseColor("#5FB6DA"));
 
         // A white outline under the chair marker and its arrow, so neither
         // disappears where it sits on top of the route.
@@ -233,30 +217,6 @@ public class RouteMapView extends View {
         this.stride = Math.max(1, stride);
         this.countFull = countFull;
         setRoute(points);
-    }
-
-    /** Corridor edges arrive in the same route frame as the centreline. */
-    public void setBand(JSONArray left, JSONArray right) {
-        int n = Math.min(left == null ? 0 : left.length(),
-                         right == null ? 0 : right.length());
-        float[] lx = new float[n], ly = new float[n];
-        float[] rx = new float[n], ry = new float[n];
-        for (int i = 0; i < n; i++) {
-            JSONArray l = left.optJSONArray(i);
-            JSONArray r = right.optJSONArray(i);
-            if (l == null || r == null || l.length() < 2 || r.length() < 2) {
-                continue;
-            }
-            lx[i] = (float) l.optDouble(0, 0);
-            ly[i] = (float) l.optDouble(1, 0);
-            rx[i] = (float) r.optDouble(0, 0);
-            ry[i] = (float) r.optDouble(1, 0);
-        }
-        bandLX = lx;
-        bandLY = ly;
-        bandRX = rx;
-        bandRY = ry;
-        invalidate();
     }
 
     public void setRoute(JSONArray points) {
@@ -616,12 +576,6 @@ public class RouteMapView extends View {
             minY = Math.min(minY, mark.y);
             maxY = Math.max(maxY, mark.y);
         }
-        for (int i = 0; i < bandLX.length; i++) {
-            minX = Math.min(minX, Math.min(bandLX[i], bandRX[i]));
-            maxX = Math.max(maxX, Math.max(bandLX[i], bandRX[i]));
-            minY = Math.min(minY, Math.min(bandLY[i], bandRY[i]));
-            maxY = Math.max(maxY, Math.max(bandLY[i], bandRY[i]));
-        }
         if (hasPose) {
             minX = Math.min(minX, poseX);
             maxX = Math.max(maxX, poseX);
@@ -652,10 +606,8 @@ public class RouteMapView extends View {
         float widthDiv = Math.max(0.0001f, userScale);
         float routeW = routePaint.getStrokeWidth();
         float doneW = donePaint.getStrokeWidth();
-        float bandW = bandEdge.getStrokeWidth();
         routePaint.setStrokeWidth(routeW / widthDiv);
         donePaint.setStrokeWidth(doneW / widthDiv);
-        bandEdge.setStrokeWidth(bandW / widthDiv);
 
         // Campus first of all: buildings, tree lines and road edges, so someone
         // who has never been to this campus can tell what they are looking at.
@@ -669,27 +621,6 @@ public class RouteMapView extends View {
                              left + widthM * scale,
                              bottom);
             canvas.drawBitmap(backdrop, null, backdropRect, null);
-        }
-
-        // Corridor first, so everything else sits on top of it.
-        if (bandLX.length >= 2) {
-            band.reset();
-            for (int i = 0; i < bandLX.length; i++) {
-                float sx = offX + (bandLX[i] - minX) * scale;
-                float sy = offY + (maxY - bandLY[i]) * scale;
-                if (i == 0) {
-                    band.moveTo(sx, sy);
-                } else {
-                    band.lineTo(sx, sy);
-                }
-            }
-            for (int i = bandRX.length - 1; i >= 0; i--) {
-                band.lineTo(offX + (bandRX[i] - minX) * scale,
-                            offY + (maxY - bandRY[i]) * scale);
-            }
-            band.close();
-            canvas.drawPath(band, bandFill);
-            canvas.drawPath(band, bandEdge);
         }
 
         path.reset();
@@ -727,7 +658,6 @@ public class RouteMapView extends View {
 
         routePaint.setStrokeWidth(routeW);
         donePaint.setStrokeWidth(doneW);
-        bandEdge.setStrokeWidth(bandW);
         canvas.restore();
 
         // Names stay upright and stay the size they were. A label that rotates
