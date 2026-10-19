@@ -49,7 +49,6 @@
     <string name="account_logs_empty">아직 표시할 기록이 없습니다.</string>
     <string name="account_logs_loading">NUC에서 계정 기록을 불러오는 중입니다.</string>
     <string name="account_logs_login_needed">로그인하면 기록이 표시됩니다.</string>
-    <string name="contact_support">긴급/문의 전화 010-7282-0961</string>
     <string name="logout">로그아웃</string>
     <string name="camera_badge">CAM</string>
     <string name="camera_stream_label">Camera Stream</string>

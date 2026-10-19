@@ -16,7 +16,6 @@ final class AppConfig {
     static final boolean CAMERA_ENABLED = false;
 
     static final String WHEELCHAIR_WIFI_SSID = "WheelchairNUC";
-    static final String SUPPORT_PHONE = "010-7282-0961";
 
     // Only used when BLUETOOTH_ONLY is false (Jetson Wi-Fi hotspot deployment).
     static final String JETSON_API_BASE_URL = "http://192.168.12.1:8081";

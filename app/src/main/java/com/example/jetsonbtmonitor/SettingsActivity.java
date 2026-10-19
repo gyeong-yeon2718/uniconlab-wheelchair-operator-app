@@ -1,7 +1,6 @@
 package com.example.jetsonbtmonitor;
 
 import android.content.Intent;
-import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.TextView;
@@ -30,13 +29,11 @@ public class SettingsActivity extends AppCompatActivity {
         accountStateText = findViewById(R.id.accountStateText);
         userProfileText = findViewById(R.id.userProfileText);
         userLogsText = findViewById(R.id.userLogsText);
-        MaterialButton contactButton = findViewById(R.id.contactButton);
         loginButton = findViewById(R.id.loginButton);
         logoutButton = findViewById(R.id.logoutButton);
 
         renderAccount();
         loadUserLogs();
-        contactButton.setOnClickListener(view -> openDialer());
         loginButton.setOnClickListener(view -> startActivity(new Intent(this, LoginActivity.class)));
         logoutButton.setOnClickListener(view -> {
             WheelchairBackgroundService.stop(this);
@@ -132,11 +129,5 @@ public class SettingsActivity extends AppCompatActivity {
             builder.append('\n');
         }
         builder.append('\n');
-    }
-
-    private void openDialer() {
-        Intent intent = new Intent(Intent.ACTION_DIAL);
-        intent.setData(Uri.parse("tel:" + AppConfig.SUPPORT_PHONE));
-        startActivity(intent);
     }
 }
